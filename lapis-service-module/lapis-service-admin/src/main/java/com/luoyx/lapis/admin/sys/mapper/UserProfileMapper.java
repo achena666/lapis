@@ -1,0 +1,65 @@
+package com.luoyx.lapis.admin.sys.mapper;
+
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.luoyx.lapis.admin.api.sys.dto.UserFullNameDTO;
+import com.luoyx.lapis.admin.sys.entity.UserProfile;
+import com.luoyx.lapis.admin.sys.response.UserEditFormVO;
+import com.luoyx.lapis.mybatisplus.mapper.GenericMapper;
+//import com.luoyx.lapis.usersnapshot.msg.UserSnapshotMessage;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+import java.util.Set;
+
+/**
+ * @author admini
+ */
+public interface UserProfileMapper extends GenericMapper<UserProfile> {
+
+    /**
+     * 查询所有用户的id、真实姓名
+     *
+     * @param userIds 用户id 集合
+     * @return
+     */
+    List<UserFullNameDTO> findFullNamesByUserIds(@Param("userIds") Set<Long> userIds);
+
+    /**
+     * 手机号唯一性校验
+     *
+     * @param excludeUserId 要排除的用户Id（编辑用户的场景）
+     * @param phone         手机号
+     * @return 返回null 表示手机号可用，否则表示手机号已被占用
+     */
+    default UserProfile findByPhoneExcludingId(Long excludeUserId, String phone) {
+        return this.selectOne(
+                Wrappers.<UserProfile>lambdaQuery()
+                        .eq(UserProfile::getPhone, phone)
+                        .ne(excludeUserId != null, UserProfile::getId, excludeUserId)
+        );
+    }
+
+    /**
+     * 邮箱唯一性校验
+     *
+     * @param excludeUserId 要排除的用户Id（编辑用户的场景）
+     * @param email         邮箱
+     * @return 返回邮箱已存在用户对象，否则返回null表示邮箱可用
+     */
+    default UserProfile findByEmailExcludingId(Long excludeUserId, String email) {
+        return this.selectOne(
+                Wrappers.<UserProfile>lambdaQuery()
+                        .eq(UserProfile::getEmail, email)
+                        .ne(excludeUserId != null, UserProfile::getId, excludeUserId)
+        );
+    }
+
+    /**
+     * 按用户id查询 用户资料 以编辑（表单回显）
+     *
+     * @param id 用户id
+     * @return 用户资料
+     */
+    UserEditFormVO.UserProfileDTO selectForUserEditForm(Long id);
+
+}

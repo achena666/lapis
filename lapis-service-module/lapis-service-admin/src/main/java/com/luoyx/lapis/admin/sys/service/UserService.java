@@ -1,0 +1,106 @@
+package com.luoyx.lapis.admin.sys.service;
+
+
+import com.luoyx.lapis.admin.api.sys.dto.UserDTO;
+import com.luoyx.lapis.admin.api.sys.query.LoginLookupQuery;
+import com.luoyx.lapis.admin.sys.entity.User;
+import com.luoyx.lapis.admin.sys.query.UserPageQuery;
+import com.luoyx.lapis.admin.sys.request.ModifyPasswordDTO;
+import com.luoyx.lapis.admin.sys.request.ResetPasswordDTO;
+import com.luoyx.lapis.admin.sys.request.UserCreateDTO;
+import com.luoyx.lapis.admin.sys.request.UserUpdateDTO;
+import com.luoyx.lapis.admin.sys.response.CreatedUserVO;
+import com.luoyx.lapis.admin.sys.response.UserAutoCompleteVO;
+import com.luoyx.lapis.admin.sys.response.UserEditFormVO;
+import com.luoyx.lapis.admin.sys.response.UserPageResultVO;
+import com.luoyx.lapis.mybatisplus.dto.PageResult;
+import com.luoyx.lapis.mybatisplus.service.BaseService;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * @author 罗英雄
+ */
+public interface UserService extends BaseService<User> {
+
+    /**
+     * 登录查询
+     *
+     * @param query 登录查询条件
+     * @return 用户信息
+     */
+    UserDTO loginLookup(LoginLookupQuery query);
+
+    /**
+     * 修改密码
+     *
+     * @param modifyPasswordDTO 表单参数
+     */
+    void modifyPassword(ModifyPasswordDTO modifyPasswordDTO) throws Exception;
+
+    /**
+     * 按关键词 查询自动完成数据
+     *
+     * @param keyword 关键词
+     * @return
+     */
+    List<UserAutoCompleteVO> findSuggestions(String keyword);
+
+    PageResult<UserPageResultVO> findPage(UserPageQuery query);
+
+    /**
+     * 新增用户
+     *
+     * @param addDTO 表单参数
+     * @return 新增的用户
+     */
+    CreatedUserVO create(UserCreateDTO addDTO);
+
+    /**
+     * 用户名唯一性校验
+     *
+     * @param excludeUserId 要排除的用户Id（编辑用户的场景）
+     * @param username      用户名
+     * @return 用户名已存在则返回false，否则返回true
+     */
+    boolean isUsernameAvailable(Long excludeUserId, String username);
+
+    /**
+     * 批量删除用户
+     *
+     * @param userIds 用户id集合
+     */
+    void deleteByIds(List<Long> userIds);
+
+    /**
+     * 用户 表单回显
+     *
+     * @param id 用户id
+     * @return 用户详情
+     */
+    UserEditFormVO findUserForEdit(Long id);
+
+    /**
+     * 修改用户信息
+     *
+     * @param userUpdateDTO 用户信息
+     */
+    void update(UserUpdateDTO userUpdateDTO);
+
+    /**
+     * 重置密码
+     *
+     * @param resetPasswordDTO 重置密码DTO
+     */
+    void resetPassword(ResetPasswordDTO resetPasswordDTO);
+
+    /**
+     * 更新用户最近登录时间
+     *
+     * @param userId        用户id
+     * @param lastLoginTime 最近登录时间
+     * @return 更新的行数
+     */
+    int updateLastLoginTime(Long userId, LocalDateTime lastLoginTime);
+}

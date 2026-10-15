@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.luoyx.lapis</groupId>
+        <artifactId>lapis-cloud-parent</artifactId>
+        <version>0.2.0-SNAPSHOT</version>
+    </parent>
+    <packaging>pom</packaging>
+
+    <artifactId>lapis-starter-module</artifactId>
+
+    <modules>
+        <module>lapis-jpa-spring-boot-starter</module>
+        <module>lapis-mybatis-plus-spring-boot-starter</module>
+        <module>lapis-audit-support</module>
+        <module>lapis-security-spring-boot-starter</module>
+        <module>lapis-validation-api</module>
+        <module>lapis-api</module>
+        <module>lapis-feign</module>
+        <module>lapis-openfeign-spring-boot-starter</module>
+        <module>lapis-idempotent-spring-boot-starter</module>
+        <module>lapis-web-spring-boot-starter</module>
+    </modules>
+</project>

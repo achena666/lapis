@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.luoyx.lapis.admin.sys.mapper.RoleAuthorityMapper">
+
+    <!-- 按权限资源id删除 角色-权限资源关联记录 -->
+    <delete id="deleteByAuthorityId">
+        delete from hyn_sys_role_authority where authority_id = #{authorityId}
+    </delete>
+
+    <!-- 按角色id删除 角色-权限资源关联记录 -->
+    <delete id="deleteByRoleIds" parameterType="collection">
+        delete from hyn_sys_role_authority
+        where role_id IN
+        <foreach collection="roleIds" item="item" open="(" close=")" separator=",">
+            #{item}
+        </foreach>
+    </delete>
+</mapper>

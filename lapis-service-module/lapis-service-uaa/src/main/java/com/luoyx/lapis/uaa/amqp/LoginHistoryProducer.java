@@ -1,0 +1,20 @@
+package com.luoyx.lapis.uaa.amqp;
+
+import com.luoyx.lapis.admin.api.sys.dto.SaveLoginHistoryDTO;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.stereotype.Component;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class LoginHistoryProducer {
+
+    private final RabbitTemplate rabbitTemplate;
+
+    public void send(SaveLoginHistoryDTO loginHistoryDTO){
+        log.debug("生产登录历史消息【{}】", loginHistoryDTO);
+        this.rabbitTemplate.convertAndSend("login.history.exchange", "login.history.routing", loginHistoryDTO);
+    }
+}

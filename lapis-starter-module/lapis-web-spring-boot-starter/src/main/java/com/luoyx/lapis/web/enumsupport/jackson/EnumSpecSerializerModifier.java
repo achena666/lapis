@@ -1,0 +1,28 @@
+package com.luoyx.lapis.web.enumsupport.jackson;
+
+import com.luoyx.lapis.api.enumsupport.EnumSpec;
+import tools.jackson.databind.BeanDescription;
+import tools.jackson.databind.JavaType;
+import tools.jackson.databind.SerializationConfig;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.ser.ValueSerializerModifier;
+
+public class EnumSpecSerializerModifier extends ValueSerializerModifier {
+
+    @Override
+    public ValueSerializer<?> modifyEnumSerializer(
+            SerializationConfig config,
+            JavaType valueType,
+            BeanDescription.Supplier beanDesc,
+            ValueSerializer<?> serializer) {
+
+        Class<?> rawClass = valueType.getRawClass();
+
+        if (EnumSpec.class.isAssignableFrom(rawClass)) {
+            return new EnumSpecSerializer<>();
+        }
+
+        return serializer;
+    }
+}
+

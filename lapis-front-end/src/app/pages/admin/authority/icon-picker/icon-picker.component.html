@@ -1,0 +1,35 @@
+<nz-modal [(nzVisible)]="iconPickerDisplay"
+          [nzTitle]="'选择图标'"
+          [nzMask]="true"
+          [nzMaskClosable]="false"
+          [nzDraggable]="true"
+          (nzOnCancel)="this.iconPickerDisplayChange.emit(false);"
+          (nzOnOk)="ok()"
+>
+    <ng-container *nzModalContent>
+        <!-- 搜索框 -->
+        <nz-input-wrapper nzAllowClear>
+            <input
+                type="text"
+                nz-input
+                placeholder="输入图标名称进行搜索"
+                [(ngModel)]="searchKey"
+                (keyup)="search()"
+            />
+            <nz-icon nzInputClearIcon nzType="close" class="ant-input-clear-icon" (click)="clearSearchKey()"/>
+            <nz-icon nzInputSuffix nzType="search" />
+        </nz-input-wrapper>
+
+
+        <div class="container">
+            <div class="group-container">
+                @for (icon of icons; track icon) {
+                    <div class="item" [class.item-selected]="icon == selectedIcon"
+                         nz-tooltip [nzTooltipTitle]="icon" (click)="clickIcon(icon)">
+                        <i nz-icon [nzType]="icon" nzTheme="outline"></i>
+                    </div>
+                }
+            </div>
+        </div>
+    </ng-container>
+</nz-modal>

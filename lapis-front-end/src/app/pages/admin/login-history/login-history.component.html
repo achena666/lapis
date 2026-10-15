@@ -1,0 +1,182 @@
+<div class="search-form-container">
+    <!-- 1. 常驻主行（第一行） -->
+    <div class="main-filter-row">
+        <div class="filter-items-group">
+            <!-- 1.1 类型单选 -->
+            <div class="filter-item">
+                <span class="filter-label">类型：</span>
+                <nz-radio-group [(ngModel)]="query.type"
+                                nzSize="small" nzButtonStyle="solid" (ngModelChange)="search()">
+                    <label nz-radio-button [nzValue]="1">登录</label>
+                    <label nz-radio-button [nzValue]="0">注销</label>
+                </nz-radio-group>
+            </div>
+
+            <!-- 1.2 用户名输入 -->
+            <div class="filter-item">
+                <span class="filter-label">用户名：</span>
+                <input nz-input [(ngModel)]="query.username"
+                       nzSize="small" placeholder="输入用户名" (keyup.enter)="search()"/>
+            </div>
+
+            <!-- 1.3 浏览器选择 -->
+            <div class="filter-item">
+                <span class="filter-label">浏览器：</span>
+                <nz-radio-group [(ngModel)]="query.browser"
+                                nzSize="small" nzButtonStyle="solid" (ngModelChange)="search()">
+                    @for (item of browserOptions; track item.value) {
+                        <label nz-radio-button [nzValue]="item.value">
+                            <span nz-icon
+                                  [nzIconfont]="item.icon"
+                                  nzTheme="fill"
+                                  class="tech-icon"
+                                  nz-tooltip
+                                  [nzTooltipTitle]="item.label">
+                            </span>
+                        </label>
+                    }
+                </nz-radio-group>
+            </div>
+
+            <!-- 1.4 操作系统选择 -->
+            <div class="filter-item">
+                <span class="filter-label">操作系统：</span>
+                <nz-radio-group [(ngModel)]="query.osName" nzSize="small" nzButtonStyle="solid" (ngModelChange)="search()">
+                    @for (item of osOptions; track item.value) {
+                        <label nz-radio-button [nzValue]="item.value">
+                            <span nz-icon
+                                  [nzIconfont]="item.icon"
+                                  nzTheme="outline"
+                                  class="tech-icon"
+                                  nz-tooltip
+                                  [nzTooltipTitle]="item.label">
+                            </span>
+                        </label>
+                    }
+                </nz-radio-group>
+            </div>
+        </div>
+
+        <!-- 1.5 按钮组（含展开/收起切换） -->
+        <div class="button-group">
+            <button nz-button nzType="primary" nzSize="small" (click)="search()">
+                <span nz-icon nzType="search" nzTheme="outline"></span>查询
+            </button>
+            <button nz-button nzSize="small" (click)="reset()">
+                <span nz-icon nzType="reload" nzTheme="outline"></span>重置
+            </button>
+            <!-- 展开 / 折叠 切换链接 -->
+            <a class="collapse-toggle" (click)="toggleCollapse()">
+                <span>{{ isCollapse ? '高级筛选' : '收起' }}</span>
+                <span nz-icon [nzType]="isCollapse ? 'down' : 'up'"></span>
+            </a>
+        </div>
+    </div>
+
+    <!-- 2. 展开行（第二行：登录时间范围） -->
+    <div class="extra-filter-row" [hidden]="isCollapse">
+        <div class="filter-item">
+            <span class="filter-label">登录时间范围：</span>
+            <nz-date-picker [(ngModel)]="query.startTime"
+                            nzSize="small"
+                            nzPlaceHolder="开始时间"
+                            nzShowTime
+                            nzFormat="yyyy-MM-dd HH:mm:ss"
+            />
+            &nbsp;~&nbsp;
+            <nz-date-picker [(ngModel)]="query.endTime"
+                            nzSize="small"
+                            nzPlaceHolder="结束时间"
+                            nzShowTime
+                            nzFormat="yyyy-MM-dd HH:mm:ss"
+            />
+        </div>
+    </div>
+</div>
+
+<div #tableContainer class="table-container">
+    <ng-template #totalTemplate let-total>
+        共 {{ total ?? 0 }} 条记录
+    </ng-template>
+
+    <nz-table
+        #basicTable
+        nzShowSizeChanger
+        [nzData]="listOfLoginHistory"
+        [nzFrontPagination]="false"
+        [nzLoading]="_loading"
+        [nzTotal]="totalRecords"
+        [(nzPageIndex)]="query.pageIndex"
+        [(nzPageSize)]="query.pageSize"
+        [nzPageSizeOptions]="[10, 20, 50, 100]"
+        nzSize="small"
+        (nzQueryParams)="onQueryParamsChange($event)"
+        [nzShowTotal]="totalTemplate"
+        [nzScroll]="{ y: tableScrollY }"
+    >
+        <thead>
+        <tr>
+            <!-- 1. 核心 ID -->
+            <th id="id" nzWidth="80px">ID</th>
+
+            <!-- 2. 行为与结果 -->
+            <th id="type" nzWidth="90px">类型</th>
+            <th id="result" nzWidth="90px">结果</th>
+            <th id="failReason" nzWidth="150px">失败原因</th>
+
+            <!-- 3. 用户身份 -->
+            <th id="username" nzWidth="120px">用户名</th>
+
+            <!-- 4. 客户端环境 -->
+            <th id="ipAddress" nzWidth="130px">客户端 IP</th>
+            <th id="location" nzWidth="130px">登录地点</th>
+            <th id="browser" nzWidth="90px" nzAlign="center">浏览器</th>
+            <th id="osName" nzWidth="90px" nzAlign="center">操作系统</th>
+
+            <!-- 5. 审计时间 -->
+            <th id="loginTime" nzWidth="160px" nzColumnKey="loginTime" [nzSortFn]="true">登录时间</th>
+        </tr>
+        </thead>
+        <tbody>
+            @for (data of listOfLoginHistory; track data.id) {
+                <tr>
+                    <td>{{ data.id }}</td>
+                    <td>
+                        <span [class.status-login]="data.type === '1' || data.type === '登录'"
+                              [class.status-logout]="data.type === '0' || data.type === '注销'">
+                            {{ data.type }}
+                        </span>
+                    </td>
+                    <td>{{ data.result }}</td>
+                    <td>{{ data.failReason || '-' }}</td>
+                    <td>{{ data.username }}</td>
+                    <td>{{ data.ipAddress }}</td>
+                    <td>{{ data.location }}</td>
+                    <td nzAlign="center">
+                        @let browser = browserOptionMap.get(data.browser);
+                        <span
+                            nz-icon
+                            [nzIconfont]="browser?.icon"
+                            nzTheme="fill"
+                            class="tech-icon"
+                            nz-tooltip
+                            [nzTooltipTitle]="data.browser + (data.browserVersion ? ' ' + data.browserVersion : '')">
+                        </span>
+                    </td>
+                    <td nzAlign="center">
+                        @let os = osOptionMap.get(data.osName);
+                        <span nz-icon
+                              [nzIconfont]="os?.icon"
+                              nzTheme="outline"
+                              class="tech-icon"
+                              nz-tooltip
+                              [nzTooltipTitle]="os?.label">
+                        </span>
+                    </td>
+
+                    <td>{{ data.loginTime }}</td>
+                </tr>
+            }
+        </tbody>
+    </nz-table>
+</div>

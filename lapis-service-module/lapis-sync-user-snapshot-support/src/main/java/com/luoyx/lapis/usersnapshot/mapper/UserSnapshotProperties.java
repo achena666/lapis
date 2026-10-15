@@ -1,0 +1,22 @@
+package com.luoyx.lapis.usersnapshot.mapper;
+
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * 用户快照的配置属性
+ *
+ * @author luo_yingxiong@163.com
+ * @since 0.2.0
+ *
+ * @see LogicDeleteById
+ */
+@Getter
+@Setter
+@ConfigurationProperties(prefix = "lapis.user-snapshot")
+public class UserSnapshotProperties {
+
+    private String tableName = "table-name";
+
+}

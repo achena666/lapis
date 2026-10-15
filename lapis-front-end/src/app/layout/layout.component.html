@@ -1,0 +1,111 @@
+<mat-drawer-container>
+    <mat-drawer mode="side" [opened]="drawerOpened">
+        <!-- <mat-drawer mode="side" opened="true"> -->
+        <!--        <app-sidebar (toggleSelectedMenuItemEmitter)="setBreadcrumbData($event);"></app-sidebar>-->
+        <div class="sidebar-logo">
+            <a href="https://github.com/Frank-Z20/ai-admin/" target="_blank">
+                <img src="./assets/img/lapis.png" alt="logo">
+                <h1>LAPIS Admin</h1>
+            </a>
+        </div>
+        <!-- 导航菜单 -->
+        <ul nz-menu nzMode="inline" [nzTheme]="'dark'">
+            <!--
+            ngTemplateOutlet: 是一个结构型指令，用于动态渲染一个ng-template
+            context: 是传递给模板的上下文对象，它包含模板中需要使用的数据
+            在这个例子中，context 包含一个 $implicit 属性，该属性的值是 menus；也就是将menus传递给menuTpl模板的意思
+            -->
+            <ng-container *ngTemplateOutlet="menuTpl; context: { $implicit: menus }"></ng-container>
+
+            <ng-template #menuTpl let-menus>
+                @for (menu of menus; track menu) {
+                    <!-- 没有子菜单 -->
+                    @if (!menu.children) {
+                        <li
+                            nz-menu-item
+                            [nzMatchRouter]="true"
+                            [nzPaddingLeft]="menu.level * 24"
+                        >
+                            @if (menu.icon) {
+                                <span nz-icon [nzType]="menu.icon" style="margin-right: 10px"></span>
+                            }
+                            <a class="menu-btn" [routerLink]="[menu.path]">{{ menu.title }}</a>
+                        </li>
+                    } @else {
+                        <!-- 有子菜单 -->
+                        <li
+                            nz-submenu
+                            [nzPaddingLeft]="menu.level * 24"
+                            [nzTitle]="menu.title"
+                            [nzIcon]="menu.icon"
+                            [nzDisabled]="menu.disabled"
+                        >
+                            <ul>
+                                <!--
+                                context: 是传递给模板的上下文对象，它包含模板中需要使用的数据
+                                在这个例子中，context 包含一个 $implicit 属性，该属性的值是 menu.children；
+                                也就是将menu.children传递给menuTpl模板的意思
+                                -->
+                                <ng-container
+                                    *ngTemplateOutlet="menuTpl; context: { $implicit: menu.children }"></ng-container>
+                            </ul>
+                        </li>
+                    }
+                }
+            </ng-template>
+        </ul>
+    </mat-drawer>
+    <mat-drawer-content>
+        <nz-header>
+            <div class="app-header">
+                <!-- 左侧：侧边栏切换按钮 -->
+                <div class="header-left">
+                    <span class="header-trigger" (click)="this.drawerOpened = !this.drawerOpened;"
+                          nz-tooltip
+                          [nzTooltipTitle]="'点击' + (drawerOpened ? '隐藏' : '展示') + '导航菜单'"
+                          nzTooltipPlacement="right">
+                        <mat-icon fontSet="material-symbols-outlined">menu</mat-icon>
+                    </span>
+                </div>
+
+                <!-- 右侧：全屏按钮与用户信息 -->
+                <div class="header-right">
+                    <span class="header-trigger" (click)="toggleFullscreen()"
+                          nz-tooltip [nzTooltipTitle]="isFullScreen ? '点击退出全屏' : '点击全屏'"
+                          nzTooltipPlacement="bottom">
+                        <mat-icon fontSet="material-symbols-sharp">
+                            {{ isFullScreen ? 'fullscreen_exit' : 'fullscreen' }}
+                        </mat-icon>
+                    </span>
+
+                    <!-- 用户名下拉菜单 -->
+                    <a nz-dropdown [nzDropdownMenu]="menu" nzTrigger="click" class="user-dropdown">
+                        <nz-avatar [nzShape]="'square'" [nzIcon]="'user'"></nz-avatar>
+                        <span class="username">{{ realName }}</span>
+                        <span nz-icon nzType="down"></span>
+                    </a>
+                    <nz-dropdown-menu #menu="nzDropdownMenu">
+                        <ul nz-menu>
+                            <li nz-menu-item (click)="modifyPassword()">
+                                <i nz-icon nzType="key" nzTheme="outline" style="margin-right: 10px"></i>修改密码
+                            </li>
+                            <li nz-menu-item (click)="showLogoutConfirm()">
+                                <i nz-icon nzType="logout" nzTheme="outline" style="margin-right: 10px"></i>退出
+                            </li>
+                        </ul>
+                    </nz-dropdown-menu>
+                </div>
+            </div>
+        </nz-header>
+
+        <nz-content>
+            <div class="inner-content">
+                <router-outlet></router-outlet>
+            </div>
+        </nz-content>
+    </mat-drawer-content>
+</mat-drawer-container>
+
+@if (formDialogDisplay) {
+    <app-modify-password [(formDialogDisplay)]="formDialogDisplay"></app-modify-password>
+}

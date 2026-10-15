@@ -1,0 +1,430 @@
+import {
+    AfterViewInit,
+    ChangeDetectionStrategy,
+    ChangeDetectorRef,
+    Component,
+    ElementRef,
+    HostListener,
+    OnDestroy,
+    OnInit,
+    ViewChild
+} from '@angular/core';
+import {NzTableModule, NzTableQueryParams, NzTdAddOnComponent} from "ng-zorro-antd/table";
+
+import {FormsModule} from "@angular/forms";
+import {AuthorityService} from "../authority.service";
+import {NzMessageService} from "ng-zorro-antd/message";
+import {NzModalService} from "ng-zorro-antd/modal";
+import {AuditInfo} from "../../../../common/audit-info";
+import {AuthorityQuery} from "../AuthorityQuery";
+import {NzButtonComponent} from "ng-zorro-antd/button";
+import {NzIconDirective} from "ng-zorro-antd/icon";
+import {NzPopconfirmDirective} from "ng-zorro-antd/popconfirm";
+import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
+import {NzFormDirective} from "ng-zorro-antd/form";
+import {NzInputDirective} from "ng-zorro-antd/input";
+import {NzRadioComponent, NzRadioGroupComponent} from "ng-zorro-antd/radio";
+import {DictTypeService} from "../../dictionary/dict-type/dict-type.service";
+import {AuthorityEditFormComponent} from "../authority-edit-form/authority-edit-form.component";
+import {finalize, Observable} from "rxjs";
+import {EnumOption} from "../../../../common/enum-option";
+import {Option} from "../../dictionary/dict-type/dict-dropdown";
+
+export interface Authority extends AuditInfo {
+    // key: string;
+    // name: string;
+    // age?: number;
+    // level?: number;
+    expand?: boolean;
+    // address?: string;
+    // children?: TreeNodeInterface[];
+    parent?: Authority;
+
+
+    /**
+     * id
+     */
+    id: number;
+    leaf: boolean;
+    builtin: EnumOption<boolean>;
+    level: number;
+
+    /**
+     * 权限类型
+     */
+    authorityType: EnumOption<string> | null;
+
+    /**
+     * 权限编码
+     */
+    authorityCode: string;
+
+    /**
+     * 权限名称
+     */
+    authorityName: string;
+
+    /**
+     * 图标
+     */
+    icon: string;
+
+    /**
+     * 请求路径
+     */
+    path: string;
+
+    /**
+     * 排序（无符号）
+     */
+    sort: number;
+
+    /**
+     * 备注
+     */
+    remark: string;
+
+    /**
+     * 子菜单集合
+     */
+    children: Authority[];
+}
+
+@Component({
+    selector: 'app-authority',
+    imports: [
+        NzTableModule,
+        NzTdAddOnComponent,
+        NzButtonComponent,
+        NzIconDirective,
+        NzPopconfirmDirective,
+        NzTooltipDirective,
+        FormsModule,
+        NzFormDirective,
+        NzInputDirective,
+        NzRadioComponent,
+        NzRadioGroupComponent,
+        AuthorityEditFormComponent
+    ],
+    templateUrl: './authority-list.component.html',
+    styleUrl: './authority-list.component.less',
+    changeDetection: ChangeDetectionStrategy.Eager,
+    providers: [NzModalService]
+})
+export class AuthorityListComponent implements OnInit, AfterViewInit, OnDestroy {
+
+    // 列表数据
+    treeNodeListOfAuthority: Authority[] = [];
+
+    // 是否加载中？
+    _loading: boolean = true;
+
+
+    // mapOfExpandedData: { [key: number]: Authority[] } = {};
+
+    mapOfExpandedData: Map<number, Authority[]> = new Map<number, Authority[]>();
+
+    // @ViewChild("treeDt") dt: Table;
+
+
+    formTitle: string = '';
+    header: string = '';
+    formDialogDisplay: boolean = false;
+    authorityId?: number;
+
+    authorityName: string = '';
+    authorityType: string = '';
+
+    authorityTypeOptions: Option[] = [];
+
+    // 用于记录展开状态的集合
+    expandedNodes: Set<number> = new Set<number>();
+
+    // 将要删除的id
+    idToDelete: number = 0;
+
+    cancelButtonDisabled: boolean = false;
+
+    // 1. 新增控制全局展开/折叠状态的变量
+    isAllExpanded: boolean = false;
+
+    @ViewChild('tableContainer')
+    tableContainer!: ElementRef<HTMLElement>;
+
+    tableScrollY = '500px';
+
+    private resizeObserver?: ResizeObserver;
+    private resizeTimer?: number;
+
+    /**
+     * 构造函数
+     * @param authorityService
+     * @param dictTypeService
+     * @param messageService
+     */
+    constructor(private readonly authorityService: AuthorityService,
+                private readonly dictTypeService: DictTypeService,
+                private readonly messageService: NzMessageService,
+                private readonly cdr: ChangeDetectorRef) {
+        this.dictTypeService.loadDropdownData(['authority_type'])
+            .subscribe(res => {
+                this.authorityTypeOptions = res[0]?.options ?? [];
+            });
+    }
+
+    @HostListener('window:resize')
+    onWindowResize(): void {
+        this.scheduleTableScrollUpdate();
+    }
+
+    private scheduleTableScrollUpdate(): void {
+        if (this.resizeTimer) {
+            cancelAnimationFrame(this.resizeTimer);
+        }
+
+        this.resizeTimer = requestAnimationFrame(() => {
+            this.updateTableScrollY();
+        });
+    }
+
+    ngOnDestroy(): void {
+        this.resizeObserver?.disconnect();
+
+        if (this.resizeTimer) {
+            cancelAnimationFrame(this.resizeTimer);
+        }
+    }
+
+    ngAfterViewInit(): void {
+        this.scheduleTableScrollUpdate();
+
+        this.resizeObserver = new ResizeObserver(() => {
+            this.scheduleTableScrollUpdate();
+        });
+
+        this.resizeObserver.observe(
+            this.tableContainer.nativeElement
+        );
+    }
+
+    private updateTableScrollY(): void {
+        if (!this.tableContainer) {
+            return;
+        }
+
+        const container = this.tableContainer.nativeElement;
+
+        const containerHeight = container.clientHeight;
+
+        const tableHeader = container.querySelector(
+            '.ant-table-thead'
+        ) as HTMLElement | null;
+
+        const headerHeight = tableHeader?.offsetHeight ?? 40;
+
+        const scrollHeight = Math.max(
+            containerHeight - headerHeight - 2,
+            100
+        );
+
+        this.tableScrollY = `${scrollHeight}px`;
+
+        // 确保 Angular 模板立即更新
+        this.cdr.detectChanges();
+    }
+
+    ngOnInit(): void {
+
+    }
+
+
+    onQueryParamsChange(queryParams: NzTableQueryParams): void {
+        this._loading = true;
+
+        const currentSort = queryParams.sort.find(item => item.value !== null);
+        let query: AuthorityQuery = {
+            authorityType: this.authorityType,
+            authorityName: this.authorityName,
+            /**
+             * 排序条件
+             */
+            sortField: (currentSort && currentSort.key) || null,
+            sortOrder: (currentSort && currentSort.value) || null,
+        };
+        this.authorityService.list(query).subscribe({
+            next: (res) => {
+                this._loading = false;
+                this.treeNodeListOfAuthority = res;
+
+                this.treeNodeListOfAuthority.forEach(item => {
+                    this.mapOfExpandedData.set(item.id, this.convertTreeToList(item));
+                });
+            },
+            error: (err) => {
+                this.messageService.create('error', err.error.errorTips);
+                this._loading = false;
+            },
+            complete: () => this._loading = false
+        });
+    }
+
+
+    search(): void {
+        this.onQueryParamsChange(this.authorityService.createLazyLoadMetaData(0));
+    }
+
+    reset(): void {
+        this.authorityName = '';
+        this.authorityType = '';
+        this.expandedNodes.clear();
+        this.isAllExpanded = false; // 还原状态
+        this.search();
+    }
+
+    /**
+     * 折叠
+     * @param array
+     * @param data
+     * @param $event
+     */
+    collapse(array: Authority[], data: Authority, $event: boolean): void {
+        if (!$event) {
+            this.expandedNodes.delete(data.id);
+            if (data.children) {
+                data.children.forEach(d => {
+                    const target = array.find(a => a.id === d.id)!;
+                    target.expand = false;
+                    this.collapse(array, target, false);
+                });
+            } else {
+                return;
+            }
+        } else {
+            this.expandedNodes.add(data.id);
+        }
+    }
+
+    /**
+     * 将树转换为数组
+     * @param root
+     */
+    convertTreeToList(root: Authority): Authority[] {
+        const stack: Authority[] = [];
+        const array: Authority[] = [];
+        const hashMap = {};
+
+        stack.push({...root, expand: this.expandedNodes.has(root.id)});
+
+        while (stack.length !== 0) {
+            const node = stack.pop()!;
+            this.visitNode(node, hashMap, array);
+            if (node.children) {
+                for (let i = node.children.length - 1; i >= 0; i--) {
+                    stack.push({
+                        ...node.children[i],
+                        expand: this.expandedNodes.has(node.children[i].id),
+                        parent: node
+                    });
+                }
+            }
+        }
+
+
+        return array;
+    }
+
+    visitNode(node: Authority,
+              hashMap: { [key: string]: boolean },
+              array: Authority[]): void {
+        if (!hashMap[node.id]) {
+            hashMap[node.id] = true;
+            array.push(node);
+        }
+    }
+
+
+    /**
+     * 显示权限 新增、编辑表单弹窗
+     * @param id 可选
+     */
+    showFormDialog(id?: number) {
+        this.formDialogDisplay = true;
+        this.formTitle = (id ? '编辑' : '新增') + '权限资源';
+        this.authorityId = id;
+    }
+
+    beforeConfirm = (): Observable<boolean> => {
+        this.cancelButtonDisabled = true;
+        return new Observable(observer => {
+            this.authorityService.deleteById(this.idToDelete)
+                .pipe(
+                    finalize(() => {
+                        observer.complete(); // 确保在流结束时完成订阅
+                    })
+                )
+                .subscribe({
+                    next: x => {
+                        observer.next(true);
+                        this.messageService.create('success', '操作成功');
+                        this.search();
+                        this.cancelButtonDisabled = false;
+                    },
+                    error: err => {
+                        observer.next(false);
+                        this.messageService.create('error', err.error?.errorTips, {nzDuration: 10000});
+                        this.cancelButtonDisabled = false;
+                    }
+                });
+        });
+    }
+
+    /**
+     * 点击 文件夹图标 切换展开状态
+     * @param item
+     * @param dataId
+     */
+    toggleExpand(item: Authority, dataId: number): void {
+        if (item.leaf) {
+            return;
+        }
+        item.expand = !item.expand;
+        this.collapse(
+            this.mapOfExpandedData.get(dataId) || [],
+            item,
+            item.expand
+        );
+    }
+
+
+    /**
+     * 2. 新增切换全部展开/折叠的方法
+     */
+    toggleExpandAll(): void {
+        this.isAllExpanded = !this.isAllExpanded;
+
+        if (this.isAllExpanded) {
+            // 递归收集所有节点 ID 到 expandedNodes 集合中
+            this.expandAllNodes(this.treeNodeListOfAuthority);
+        } else {
+            // 清空展开状态集合
+            this.expandedNodes.clear();
+        }
+
+        // 重新构建展开树视图数据
+        this.treeNodeListOfAuthority.forEach(item => {
+            this.mapOfExpandedData.set(item.id, this.convertTreeToList(item));
+        });
+    }
+
+    /**
+     * 递归将所有非叶子/有子节点的节点 ID 放入 expandedNodes 集合
+     */
+    private expandAllNodes(nodes: Authority[]): void {
+        nodes?.forEach(node => {
+            this.expandedNodes.add(node.id);
+            if (node.children && node.children.length > 0) {
+                this.expandAllNodes(node.children);
+            }
+        });
+    }
+}

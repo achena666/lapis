@@ -1,0 +1,51 @@
+package com.luoyx.lapis.admin.sys.request;
+
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import org.hibernate.validator.constraints.Length;
+
+/**
+ * 新增字典 表单参数VO 类
+ *
+ * @author luoyingxiong
+ */
+@Getter
+@Setter
+@ToString
+public class DictItemCreateDTO {
+
+    @Schema(description = "字典类型id")
+    @NotNull(message = "字典类型不能为空")
+    private Long dictTypeId;
+
+    @Schema(description = "字典选项编码")
+    @NotBlank(message = "字典选项编码不能为空")
+    @Length(max = 50, message = "字典选项编码不能超过50个字")
+    private String dictItemCode;
+
+    @Schema(description = "字典选项名称")
+    @NotBlank(message = "字典选项名称不能为空")
+    @Length(max = 50, message = "字典选项名称不能超过50个字")
+    private String dictItemName;
+
+    @Schema(description = "序号")
+    @NotNull(message = "序号不能为空")
+    @Min(value = 1, message = "序号不能小于1")
+    @Max(value = Short.MAX_VALUE, message = "序号不能大于" + Short.MAX_VALUE)
+    private Integer sort;
+
+    @Schema(description = "备注")
+    @Length(max = 60, message = "备注不能超过60个字")
+    private String remark;
+
+    @Schema(description = "图标")
+    @Length(max = 50, message = "图标不能超过50个字")
+    private String icon;
+}

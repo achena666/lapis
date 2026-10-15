@@ -1,0 +1,29 @@
+# IntelliJ project files
+.idea/
+target/
+*.iml
+out
+gen
+*.log
+rebel.xml
+rebel.xml.bak
+/.idea/
+
+# Node / Angular（前端）
+node_modules/
+.angular/
+dist/
+coverage/
+npm-debug.log*
+
+# 编译产物与临时文件
+*.class
+*.jar
+!**/maven-wrapper.jar
+.DS_Store
+Thumbs.db
+
+# 敏感与本地环境文件
+*.local
+application-local.yml
+

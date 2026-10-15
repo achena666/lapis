@@ -1,0 +1,108 @@
+package com.luoyx.lapis.admin.sys.mapper;
+
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.luoyx.lapis.admin.sys.entity.DictItem;
+import com.luoyx.lapis.admin.sys.query.DictItemCodeUniqueCheckQuery;
+import com.luoyx.lapis.admin.sys.query.DictItemNameUniqueCheckQuery;
+import com.luoyx.lapis.admin.sys.query.DictItemQuery;
+import com.luoyx.lapis.admin.sys.response.DictItemDetailVO;
+import com.luoyx.lapis.admin.sys.response.DictItemDropdownDTO;
+import com.luoyx.lapis.admin.sys.response.DictItemResultVO;
+import com.luoyx.lapis.common.enums.EnableStatusEnum;
+import com.luoyx.lapis.mybatisplus.mapper.GenericMapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+import java.util.Set;
+
+/**
+ * <p>
+ * 数据字典选项表 Mapper 接口
+ * </p>
+ *
+ * @author LuoYingxiong
+ * @since 2021-04-15
+ */
+public interface DictItemMapper extends GenericMapper<DictItem> {
+
+    /**
+     * 按字典类型id 查询字典选项
+     *
+     * @param query
+     * @return
+     */
+    List<DictItemResultVO> selectDictItemByTypeId(DictItemQuery query);
+
+    /**
+     * 新增、编辑字典值时，执行该查询以确保同一字典类型下单字典值不重复
+     * @param query 条件
+     * @return
+     */
+    default Long countDictItemCode(DictItemCodeUniqueCheckQuery query){
+        return selectCount(
+                Wrappers.<DictItem>lambdaQuery()
+                        .eq(DictItem::getDictItemCode, query.getDictItemCode())
+                        .eq(DictItem::getDictTypeId, query.getDictTypeId())
+                        .ne(query.getExcludeDictItemId() != null, DictItem::getId, query.getExcludeDictItemId())
+        );
+    }
+
+    /**
+     * 新增、编辑时，校验同一类型下的字典名称是否已存在
+     *
+     * @param query 条件
+     * @return 记录数
+     */
+    default Long countDictItemName(DictItemNameUniqueCheckQuery query) {
+        return selectCount(
+                Wrappers.<DictItem>lambdaQuery()
+                        .eq(DictItem::getDictItemName, query.getDictItemName())
+                        .eq(DictItem::getDictTypeId, query.getDictTypeId())
+                        .ne(query.getExcludeDictItemId() != null, DictItem::getId, query.getExcludeDictItemId())
+        );
+    }
+
+    /**
+     * 统计某个字典类型的字典数量
+     *
+     * @param dictTypeId 字典类型id
+     * @return 字典数量
+     */
+    int countByDictTypeId(@Param("dictTypeId") Long dictTypeId);
+
+    /**
+     * 统计一批字典类型的字典数量
+     *
+     * @param dictTypeIds 字典类型id列表
+     * @return 字典数量列表，对应dictTypeIds列表
+     */
+    List<String> countByDictTypeIds(@Param("dictTypeIds") List<Long> dictTypeIds);
+
+    /**
+     * 按字典类型编码 查询字典选项
+     *
+     * @param dictTypeCodes 字典类型编码列表
+     * @return 字典选项列表
+     */
+    List<DictItemDropdownDTO> selectDropdownData(@Param("dictTypeCodes") Set<String> dictTypeCodes);
+
+    /**
+     * 启用
+     *
+     * @param id 主键id
+     */
+    default void updateStatus(Long id, EnableStatusEnum enableStatusEnum) {
+        DictItem dictItem = new DictItem();
+        dictItem.setId(id);
+        dictItem.setEnabled(enableStatusEnum.getBoolValue());
+        updateById(dictItem);
+    }
+
+    /**
+     * 查询字典选项的详情
+     *
+     * @param id 字典选项id
+     * @return 字典选项详情
+     */
+    DictItemDetailVO details(Long id);
+}

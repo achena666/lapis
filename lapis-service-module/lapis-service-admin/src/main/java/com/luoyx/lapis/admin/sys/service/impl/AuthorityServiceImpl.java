@@ -1,0 +1,442 @@
+package com.luoyx.lapis.admin.sys.service.impl;
+
+import com.luoyx.lapis.admin.api.sys.dto.UserDTO;
+import com.luoyx.lapis.admin.api.sys.enums.AuthorityTypeEnum;
+import com.luoyx.lapis.admin.api.sys.enums.YesNoEnum;
+import com.luoyx.lapis.admin.sys.converter.AuthorityConverter;
+import com.luoyx.lapis.admin.sys.entity.Authority;
+import com.luoyx.lapis.admin.sys.mapper.AuthorityMapper;
+import com.luoyx.lapis.admin.sys.query.AuthorityQuery;
+import com.luoyx.lapis.admin.sys.request.AuthorityCreateDTO;
+import com.luoyx.lapis.admin.sys.request.AuthorityUpdateDTO;
+import com.luoyx.lapis.admin.sys.response.AuthorityCheckBoxTreeVO;
+import com.luoyx.lapis.admin.sys.response.AuthorityDetailVO;
+import com.luoyx.lapis.admin.sys.response.AuthorityTreeNodeVO;
+import com.luoyx.lapis.admin.sys.response.AuthorityTreeSelectVO;
+import com.luoyx.lapis.admin.sys.response.AuthorityVO;
+import com.luoyx.lapis.admin.sys.service.AuthorityService;
+import com.luoyx.lapis.admin.sys.service.RoleAuthorityService;
+import com.luoyx.lapis.admin.util.MenuTreeUtil;
+import com.luoyx.lapis.mybatisplus.service.impl.BaseServiceImpl;
+import com.luoyx.lapis.web.exception.ResourceNotFoundException;
+import com.luoyx.lapis.web.exception.ValidateException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * <p>
+ * 权限表 服务实现类
+ * </p>
+ *
+ * @author 罗英雄
+ * @since 2022-06-18
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class AuthorityServiceImpl extends BaseServiceImpl<AuthorityMapper, Authority> implements AuthorityService {
+
+    private final RoleAuthorityService roleAuthorityService;
+    private final AuthorityConverter authorityConverter;
+
+    @Override
+    public Set<String> findAuthoritiesByUserId(Long userId) {
+        return baseMapper.findAuthoritiesByUserId(userId);
+    }
+
+    @Override
+    public List<UserDTO.SideMenuDTO> buildMenuTree(Long sysUserId) {
+        List<UserDTO.SideMenuDTO> sideMenuDtoList = new MenuTreeUtil(
+                baseMapper.selectSideMenuByUserId(sysUserId)
+        ).builTree();
+
+        return sideMenuDtoList;
+    }
+
+    @Override
+    public List<AuthorityTreeNodeVO> findAuthorities(AuthorityQuery query) {
+        List<AuthorityTreeNodeVO> authorityTreeNodeList = new ArrayList<>();
+        List<AuthorityVO> authorities = baseMapper.findList(query);
+
+        // 根节点
+        List<AuthorityVO> rootList = authorities.stream()
+                .filter(item -> item.getParentId() == 0)
+                .toList();
+
+        for (AuthorityVO rootNode : rootList) {
+            AuthorityTreeNodeVO treeNodeVO = authorityConverter.toAuthorityTreeNode(rootNode);
+            authorityTreeNodeList.add(buildChileNode(treeNodeVO, authorities));
+        }
+
+        return authorityTreeNodeList;
+    }
+
+    private AuthorityTreeNodeVO buildChileNode(AuthorityTreeNodeVO authorityTreeNode,
+                                               List<AuthorityVO> authorityList) {
+        List<AuthorityTreeNodeVO> children = new ArrayList<>();
+        for (AuthorityVO authority : authorityList) {
+            if (authority.getParentId().equals(authorityTreeNode.getId())) {
+                AuthorityTreeNodeVO treeNode = authorityConverter.toAuthorityTreeNode(authority);
+                children.add(buildChileNode(treeNode, authorityList));
+            }
+        }
+        authorityTreeNode.setChildren(children);
+
+        return authorityTreeNode;
+    }
+
+    /**
+     * 新增权限
+     *
+     * @param authority
+     * @return
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Authority create(AuthorityCreateDTO authorityCreateDTO) {
+        authorityCreateDTO.setAuthorityCode(authorityCreateDTO.getAuthorityCode().trim());
+        Authority authority = authorityConverter.toEntity(authorityCreateDTO);
+
+        // 校验表单参数
+        checkFormData(authority);
+
+        Long parentId = authority.getParentId();
+
+        // 如果没选择父级菜单，则默认为根菜单
+        if (null == parentId) {
+            authority.setParentId(0L);
+            authority.setLevel(1);
+        } else {
+            Authority parentAuthority = baseMapper.selectById(parentId);
+            if (null == parentAuthority) {
+                throw new ResourceNotFoundException("父节点不存在");
+            }
+
+            // 如果父节点是叶子节点，则取消其叶子节点
+            if (Boolean.TRUE.equals(parentAuthority.getLeaf())) {
+                parentAuthority.setLeaf(false);
+                baseMapper.updateById(parentAuthority);
+            }
+            authority.setLevel(parentAuthority.getLevel() + 1);
+        }
+
+        // 设置默认图标
+        if (StringUtils.isBlank(authority.getIcon())) {
+            authority.setIcon("skin");
+        }
+
+        // 设置默认序号
+        if (null == authority.getSort()) {
+            Integer maxSort = baseMapper.selectMaxSortByParentId(authority.getParentId());
+            authority.setSort(null == maxSort ? 1 : maxSort + 1);
+        }
+        baseMapper.insert(authority);
+        roleAuthorityService.grantNewAuthorityToSuperAdminRole(authority.getId());
+
+        return authority;
+    }
+
+    /**
+     * 修改权限
+     *
+     * @param authorityUpdateDTO 权限表单参数
+     */
+    @Override
+    public void update(AuthorityUpdateDTO authorityUpdateDTO) {
+        Long id = authorityUpdateDTO.getId();
+        Authority existingAuthority = baseMapper.selectById(id);
+        if (Objects.isNull(existingAuthority)) {
+            throw new ValidateException("你要修改的权限资源不存在");
+        }
+        // 校验是否为系统内置权限
+        if (YesNoEnum.YES.equals(existingAuthority.getBuiltin())) {
+            throw new ValidateException("【" + existingAuthority.getAuthorityName() + "】为系统内置权限， 不允许修改。");
+        }
+        authorityUpdateDTO.setAuthorityCode(authorityUpdateDTO.getAuthorityCode().trim());
+        Authority authority = authorityConverter.toEntity(authorityUpdateDTO);
+
+        // 记录旧的、新的父节点id
+        final Long oldParentId = existingAuthority.getParentId();
+        final Long inputParentId = authority.getParentId();
+
+        // 处理输入的父节点id，Null 和 0 都表示根节点
+        final Long newParentId = null == inputParentId ? 0L : inputParentId;
+        if (newParentId.equals(id)) {
+            throw new ValidateException("不能将自身设置为自己的父节点");
+        }
+
+        // 如果更换了父节点，需要处理 旧父节点、新父节点的叶子节点状态
+        if (!oldParentId.equals(newParentId)) {
+
+            // 没有传递父节点id，默认为根节点，当前菜单则为第1层菜单
+            if (newParentId == 0) {
+                authority.setParentId(0L);
+                authority.setLevel(1);
+            } else {
+
+                // 校验新父节点是否存在
+                final Authority newParentAuthority = baseMapper.selectById(newParentId);
+                if (Objects.isNull(newParentAuthority)) {
+                    throw new ResourceNotFoundException("父节点不存在");
+                }
+                authority.setLevel(newParentAuthority.getLevel() + 1);
+
+                // 如果新父节点是叶子节点，则取消其叶子节点
+                if (Boolean.TRUE.equals(newParentAuthority.getLeaf())) {
+                    Authority updateNewParentAuthority = new Authority();
+                    updateNewParentAuthority.setId(newParentId);
+                    updateNewParentAuthority.setLeaf(false);
+                    baseMapper.updateById(updateNewParentAuthority);
+                }
+            }
+
+            if (oldParentId != 0) {
+                // 如果旧的父节点下没有子节点，则设置为叶子节点
+                long count = baseMapper.selectCountByParentId(oldParentId, id);
+                if (count == 0) {
+                    Authority updateOldParentAuthority = new Authority();
+                    updateOldParentAuthority.setId(oldParentId);
+                    updateOldParentAuthority.setLeaf(true);
+                    baseMapper.updateById(updateOldParentAuthority);
+                }
+            }
+        }
+        if (StringUtils.isBlank(authority.getIcon())) {
+            authority.setIcon("skin");
+        }
+        baseMapper.updateById(authority);
+    }
+
+    /**
+     * 校验权限编码可用性
+     *
+     * @param excludeId     要排除的权限id
+     * @param authorityCode 权限编码
+     * @return 是否唯一 true=唯一 false=不唯一
+     */
+    @Override
+    public boolean isAuthorityCodeUnique(Long excludeId, String authorityCode) {
+        return baseMapper.selectOneByAuthorityCode(excludeId, authorityCode) == null;
+    }
+
+    /**
+     * 校验权限名称可用性
+     *
+     * @param excludeId     要排除的权限id
+     * @param authorityName 权限名称
+     * @return 是否唯一 true=唯一 false=不唯一
+     */
+    @Override
+    public boolean isAuthorityNameUnique(Long excludeId, String authorityName) {
+        return baseMapper.selectOneByAuthorityName(excludeId, authorityName) == null;
+    }
+
+    /**
+     * 校验表单参数
+     *
+     * @param authority 权限表单参数
+     */
+    @Override
+    public void checkFormData(Authority authority) {
+        Long id = authority.getId();
+        String authorityName = authority.getAuthorityName();
+        if (!isAuthorityNameUnique(id, authorityName)) {
+            throw new ValidateException("权限名称" + authorityName + "已存在, 请勿重复添加");
+        }
+    }
+
+    @Override
+    public List<AuthorityTreeSelectVO> selectParentAuthorityFormData() {
+        List<AuthorityTreeSelectVO> dataList = baseMapper.selectParentAuthorityFormData();
+        List<AuthorityTreeSelectVO> rootNodeList = dataList.stream()
+                .filter(item -> item.getParentKey().equals(0L))
+                .collect(Collectors.toList());
+        for (AuthorityTreeSelectVO rootNode : rootNodeList) {
+            buildChilTree(rootNode, dataList);
+        }
+
+        return rootNodeList;
+    }
+
+    /**
+     * 加载权限资源, 以复选框形式的树结构展示
+     *
+     * @return 权限资源树
+     */
+    @Override
+    public List<AuthorityCheckBoxTreeVO> selectCheckBoxTree() {
+        List<AuthorityCheckBoxTreeVO> allNodeList = baseMapper.selectForCheckBoxTree();
+        List<AuthorityCheckBoxTreeVO> rootNodeList = allNodeList.stream()
+                .filter(item -> "0".equals(item.getParentKey()))
+                .collect(Collectors.toList());
+        for (AuthorityCheckBoxTreeVO rootNode : rootNodeList) {
+            buildChilTree(rootNode, allNodeList);
+        }
+
+        return rootNodeList;
+    }
+
+    /**
+     * 构建父级菜单树【表单】
+     *
+     * @param parentNode  父节点
+     * @param allNodeList 所有节点
+     * @return
+     */
+    private AuthorityTreeSelectVO buildChilTree(AuthorityTreeSelectVO parentNode, List<AuthorityTreeSelectVO> allNodeList) {
+        List<AuthorityTreeSelectVO> childrenList = new ArrayList<>();
+        for (AuthorityTreeSelectVO node : allNodeList) {
+            if (node.getParentKey().equals(parentNode.getKey())) {
+
+                // 非叶子节点执行递归
+                childrenList.add(buildChilTree(node, allNodeList));
+            }
+        }
+        parentNode.setChildren(childrenList);
+
+        return parentNode;
+    }
+
+    /**
+     * 构建父级菜单树【表单】
+     *
+     * @param parentNode  父节点
+     * @param allNodeList 所有节点
+     * @return
+     */
+    private AuthorityCheckBoxTreeVO buildChilTree(AuthorityCheckBoxTreeVO parentNode, List<AuthorityCheckBoxTreeVO> allNodeList) {
+        log.info("菜单【{}】是否叶子节点 -> {}", parentNode.getTitle(), parentNode.getLeaf());
+        List<AuthorityCheckBoxTreeVO> childrenList = new ArrayList<>();
+        for (AuthorityCheckBoxTreeVO node : allNodeList) {
+            if (node.getParentKey().equals(parentNode.getKey())) {
+
+                // 非叶子节点执行递归
+                childrenList.add(buildChilTree(node, allNodeList));
+            }
+        }
+        parentNode.setChildren(childrenList);
+
+        return parentNode;
+    }
+
+
+    /**
+     * 按权限资源id 删除【角色-权限资源】数据以及【权限资源数据】
+     * <p>
+     * 控制在一个事务下
+     *
+     * @param id 权限资源id
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteById(Long id) {
+        Authority existAuthority = baseMapper.selectById(id);
+        if (null == existAuthority) {
+            throw new ResourceNotFoundException("权限数据id " + id + "不存在");
+        }
+        // 校验是否为系统内置权限
+        if (YesNoEnum.YES.equals(existAuthority.getBuiltin())) {
+            throw new ValidateException("【" + existAuthority.getAuthorityName() + "】为系统内置权限， 不允许删除。");
+        }
+
+        // 校验当前权限是否存在子级权限
+        final String authorityName = existAuthority.getAuthorityName();
+        if (Boolean.FALSE.equals(existAuthority.getLeaf())) {
+            throw new ValidateException("无法删除权限【" + authorityName + "】：该权限下仍存在子权限，请先删除所有子权限后重试。");
+        }
+
+        // 校验权限资源是否被角色引用
+        List<String> roleNames = baseMapper.findNonBuiltinRoleNamesByAuthorityId(id);
+        if (CollectionUtils.isNotEmpty(roleNames)) {
+            int limit = 3;
+            List<String> displayNames = roleNames.size() > limit
+                    ? roleNames.subList(0, limit)
+                    : roleNames;
+
+            String joined = String.join("、", displayNames);
+            String suffix = roleNames.size() > limit ? " 等 " + roleNames.size() + " 个角色" : "";
+
+            String message = "无法删除权限「" + authorityName + "」："
+                    + "该权限当前被角色「" + joined + suffix + "」引用，"
+                    + "请先解除与角色的关联再尝试删除。";
+
+            throw new ValidateException(message);
+        }
+        roleAuthorityService.deleteByAuthorityId(id);
+        baseMapper.deleteById(id);
+
+        long parentId = existAuthority.getParentId();
+        long count = baseMapper.selectChildAuthorityByParentId(parentId);
+
+        // 父级权限资源没有子级权限资源时，将父级权限资源设为叶子节点
+        if (count == 0) {
+            Authority parentAuthority = new Authority();
+            parentAuthority.setLeaf(true);
+            parentAuthority.setId(parentId);
+            baseMapper.updateById(parentAuthority);
+        }
+    }
+
+    @Override
+    public AuthorityDetailVO view(Long id) {
+        return baseMapper.view(id);
+    }
+
+    /**
+     * 查询角色已有的权限名称
+     *
+     * @param roleId 角色id
+     * @return 角色已有的权限名称
+     */
+    @Override
+    public List<String> selectAuthorityNamesByRoleId(Long roleId) {
+        return baseMapper.selectAuthorityNamesByRoleId(roleId);
+    }
+
+    /**
+     * @param authorityIds
+     * @return
+     */
+    @Override
+    public List<String> selectAuthorityNamesByIds(List<Long> authorityIds) {
+        return baseMapper.selectAuthorityNamesByIds(authorityIds);
+    }
+
+    /**
+     * 校验权限资源id是否存在
+     *
+     * @param ids 权限资源id集合
+     * @return 权限资源键值对 key=权限资源id, value=权限资源
+     */
+    @Override
+    public Map<Long, Authority> checkAuthorityIds(Set<Long> ids) {
+        Map<Long, Authority> authorityMap = baseMapper.selectBatchIds(ids).stream()
+                .collect(
+                        Collectors.toMap(
+                                Authority::getId,
+                                item -> item,
+                                (oldValue, newValue) -> newValue,
+                                LinkedHashMap::new
+                        )
+                );
+        for (Long id : ids) {
+            if (!authorityMap.containsKey(id)) {
+                throw new ValidateException("不合法的权限资源id【" + id + "】");
+            }
+        }
+
+        return authorityMap;
+    }
+}

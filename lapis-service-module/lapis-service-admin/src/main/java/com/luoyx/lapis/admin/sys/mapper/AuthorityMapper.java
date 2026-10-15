@@ -1,0 +1,141 @@
+package com.luoyx.lapis.admin.sys.mapper;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.luoyx.lapis.admin.api.sys.dto.UserDTO;
+import com.luoyx.lapis.admin.sys.entity.Authority;
+import com.luoyx.lapis.admin.sys.query.AuthorityQuery;
+import com.luoyx.lapis.admin.sys.response.AuthorityCheckBoxTreeVO;
+import com.luoyx.lapis.admin.sys.response.AuthorityDetailVO;
+import com.luoyx.lapis.admin.sys.response.AuthorityTreeSelectVO;
+import com.luoyx.lapis.admin.sys.response.AuthorityVO;
+import com.luoyx.lapis.mybatisplus.mapper.GenericMapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * <p>
+ * 权限表 Mapper 接口
+ * </p>
+ *
+ * @author 罗英雄
+ * @since 2022-06-18
+ */
+public interface AuthorityMapper extends GenericMapper<Authority> {
+
+    /**
+     * 按用户id查询权限
+     *
+     * @param userId 用户id
+     * @return 权限集合
+     */
+    Set<String> findAuthoritiesByUserId(@Param("userId") Long userId);
+
+
+    /**
+     * 按用户id查询权限
+     *
+     * @param userId 用户id
+     * @return 菜单集合
+     */
+    List<UserDTO.SideMenuDTO> selectSideMenuByUserId(@Param("userId") Long userId);
+
+    /**
+     * 查询所有权限数据
+     *
+     * @param query
+     * @return
+     */
+    List<AuthorityVO> findList(AuthorityQuery query);
+
+    List<AuthorityTreeSelectVO> selectParentAuthorityFormData();
+
+    List<AuthorityCheckBoxTreeVO> selectForCheckBoxTree();
+
+    /**
+     * 查询权限编码是否已存在
+     *
+     * @param excludeId     要排除的权限id
+     * @param authorityCode 权限编码
+     * @return 返回对象 不为null 表示权限编码已存在
+     */
+    default Authority selectOneByAuthorityCode(Long excludeId, String authorityCode) {
+        return selectOne(
+                Wrappers.<Authority>lambdaQuery()
+                        .eq(Authority::getAuthorityCode, authorityCode)
+                        .ne(excludeId != null, Authority::getId, excludeId)
+        );
+    }
+
+    /**
+     * 校验权限名称是否已存在
+     *
+     * @param excludeAuthorityId 要排除的权限id
+     * @param authorityName      权限名称
+     * @return 返回对象 不为null 表示权限名称已存在
+     */
+    default Authority selectOneByAuthorityName(Long excludeAuthorityId, String authorityName) {
+        return selectOne(
+                Wrappers.<Authority>lambdaQuery()
+                        .eq(Authority::getAuthorityName, authorityName)
+                        .ne(excludeAuthorityId != null, Authority::getId, excludeAuthorityId)
+        );
+    }
+
+    /**
+     * 统计子权限资源数量
+     *
+     * @param parentId 父级权限资源id
+     * @return 子权限资源数量
+     */
+    long selectChildAuthorityByParentId(@Param("parentId") Long parentId);
+
+    AuthorityDetailVO view(Long id);
+
+    /**
+     * 按父级权限资源id查询最大排序
+     *
+     * @param parentId 父级权限资源id
+     * @return 最大排序
+     */
+    Integer selectMaxSortByParentId(@Param("parentId") Long parentId);
+
+    /**
+     * 查询角色已有的权限名称
+     *
+     * @param roleId 角色id
+     * @return 角色已有的权限名称
+     */
+    List<String> selectAuthorityNamesByRoleId(@Param("roleId") Long roleId);
+
+    default List<String> selectAuthorityNamesByIds(List<Long> authorityIds) {
+        return selectList(
+                new LambdaQueryWrapper<Authority>()
+                        .select(Authority::getAuthorityName)
+                        .in(Authority::getId, authorityIds)
+        )
+                .stream()
+                .map(Authority::getAuthorityName)
+                .collect(Collectors.toList());
+
+    }
+
+    /**
+     * 查询某个权限（authorityId）被哪些非内置角色（role_name）所引用。
+     *
+     * @param authorityId 权限id
+     * @return 角色名称集合
+     */
+    List<String> findNonBuiltinRoleNamesByAuthorityId(@Param("authorityId") Long authorityId);
+
+    default long selectCountByParentId(Long parentId, Long excludeAuthorityId) {
+        return selectCount(
+                Wrappers.<Authority>lambdaQuery()
+                        .eq(Authority::getParentId, parentId)
+                        .ne(Authority::getId, excludeAuthorityId)
+        );
+    }
+}

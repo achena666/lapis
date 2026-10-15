@@ -1,0 +1,111 @@
+:host {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.role-list-search-wrapper {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 8px 16px;
+    margin-bottom: 16px;
+    background: #fbfbfb;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+
+    .left-action-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .filter-fieldset {
+        border: 1px dashed #d9d9d9;
+        border-radius: 6px;
+        padding: 4px 12px 8px;
+        margin: 0;
+        transition: all 0.3s;
+
+        &:hover {
+            border-color: #40a9ff;
+        }
+
+        .right-filter-group {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+
+            .filter-item {
+                display: flex;
+                align-items: center;
+                white-space: nowrap;
+
+                .filter-label {
+                    font-size: 14px;
+                    color: rgba(0, 0, 0, 0.85);
+                    margin-right: 8px;
+                }
+
+                .filter-input {
+                    width: 150px;
+                }
+            }
+
+            .button-group {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+        }
+    }
+}
+
+/* 核心容器：将内部布局转化为 Flex 上下分布 */
+.table-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+
+    ::ng-deep {
+        /* 强行拉满表格组件容器高度 */
+        nz-table,
+        .ant-table-wrapper,
+        .ant-spin-nested-loading,
+        .ant-spin-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 旋转/数据主体占满剩余空间 */
+        .ant-spin-container {
+            justify-content: space-between;
+        }
+
+        /* 表格区域 */
+        .ant-table {
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* 底部分页条：固定吸附底部 */
+        .ant-pagination {
+            flex: 0 0 auto;
+            margin: 12px 0 0 0 !important;
+            padding: 0 8px;
+        }
+
+        .button-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+        }
+    }
+}

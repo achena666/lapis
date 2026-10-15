@@ -1,0 +1,431 @@
+package com.luoyx.lapis.uaa.config;
+
+import com.fasterxml.jackson.databind.Module;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.bingoohuang.patchca.background.MyCustomBackgroundFactory;
+import com.github.bingoohuang.patchca.custom.ConfigurableCaptchaService;
+import com.github.bingoohuang.patchca.filter.predefined.DoubleRippleFilterFactory;
+import com.github.bingoohuang.patchca.word.RandomWordFactory;
+import com.luoyx.lapis.security.autoconfigure.MyAuthenticationEntryPoint;
+import com.luoyx.lapis.security.pojo.CurrentSysUser;
+import com.luoyx.lapis.security.pojo.CurrentSysUserMixin;
+import com.luoyx.lapis.uaa.authentication.captcha.CaptchaGrantAuthenticationConverter;
+import com.luoyx.lapis.uaa.authentication.captcha.CaptchaGrantAuthenticationProvider;
+import com.luoyx.lapis.uaa.authentication.password.PasswordGrantAuthenticationConverter;
+import com.luoyx.lapis.uaa.authentication.password.PasswordGrantAuthenticationProvider;
+import com.luoyx.lapis.uaa.constant.OnlineSessionConstants;
+import com.luoyx.lapis.uaa.filter.CookieRefreshTokenFilter;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import nl.basjes.parse.useragent.UserAgentAnalyzer;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.lob.DefaultLobHandler;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.jackson2.SecurityJackson2Modules;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.OAuth2Token;
+import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
+import org.springframework.security.oauth2.core.oidc.OidcIdToken;
+import org.springframework.security.oauth2.core.oidc.OidcScopes;
+import org.springframework.security.oauth2.core.oidc.OidcUserInfo;
+import org.springframework.security.oauth2.core.oidc.StandardClaimNames;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.jackson2.OAuth2AuthorizationServerJackson2Module;
+import org.springframework.security.oauth2.server.authorization.oidc.authentication.OidcUserInfoAuthenticationContext;
+import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
+import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
+import org.springframework.security.oauth2.server.authorization.token.DelegatingOAuth2TokenGenerator;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2AccessTokenGenerator;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2RefreshTokenGenerator;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenClaimsContext;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenClaimsSet;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.ExceptionTranslationFilter;
+
+import java.awt.*;
+import java.security.Principal;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Random;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * 授权服务器配置
+ *
+ * @author zt21961
+ */
+@Slf4j
+@Configuration
+@RequiredArgsConstructor
+public class AuthorizationServerConfig {
+
+    private static final String CUSTOM_CONSENT_PAGE_URI = "/oauth2/consent";
+
+    @Bean
+    @Order(1)
+//    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
+                                                                      OAuth2AuthorizationService authorizationService,
+                                                                      OAuth2TokenGenerator<?> tokenGenerator,
+                                                                      CookieTokenResponseHandler tokenResponseHandler) {
+
+        http
+                .oauth2AuthorizationServer(
+                        (authorizationServer) -> {
+                            http.securityMatcher(authorizationServer.getEndpointsMatcher());
+                        }
+                );
+
+        http.getConfigurer(OAuth2AuthorizationServerConfigurer.class)
+
+                // 设置自定义的图形验证码模式
+                .tokenEndpoint(tokenEndpoint -> tokenEndpoint
+                        .accessTokenRequestConverter(new CaptchaGrantAuthenticationConverter())
+                        .authenticationProvider(
+                                new CaptchaGrantAuthenticationProvider(
+                                        authorizationService,
+                                        tokenGenerator
+                                )
+                        )
+                        .accessTokenResponseHandler(tokenResponseHandler)
+                        .errorResponseHandler(new CustomAuthExceptionHandler())
+                )
+
+                //设置自定义密码模式
+                .tokenEndpoint(tokenEndpoint ->
+                        tokenEndpoint
+                                .accessTokenRequestConverter(new PasswordGrantAuthenticationConverter())
+                                .authenticationProvider(
+                                        new PasswordGrantAuthenticationProvider(authorizationService, tokenGenerator)
+                                )
+                )
+                .tokenRevocationEndpoint(tokenRevocationEndpoint ->
+                        tokenRevocationEndpoint
+                                .revocationRequestConverter(new CookieOAuth2TokenRevocationAuthenticationConverter())
+                                .revocationResponseHandler(
+                                        new ClearCookieOnRevokeSuccessHandler(new String[]{
+                                                OAuth2ParameterNames.ACCESS_TOKEN,
+                                                OAuth2ParameterNames.REFRESH_TOKEN}
+                                        )
+                                )
+                );
+
+
+        log.info("设置异常处理");
+        http
+                // 设置异常处理
+                .addFilterBefore(new MyExceptionTranslationFilter(), ExceptionTranslationFilter.class)
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(new MyAuthenticationEntryPoint())
+                );
+
+        // 开启cors, 放行前端地址
+        http.cors(Customizer.withDefaults());
+
+        return http.build();
+    }
+
+    @Bean
+    public FilterRegistrationBean<CookieRefreshTokenFilter> refreshTokenFilterRegistration() {
+        FilterRegistrationBean<CookieRefreshTokenFilter> reg = new FilterRegistrationBean<>();
+        reg.setFilter(new CookieRefreshTokenFilter());
+        reg.addUrlPatterns("/oauth2/token"); // 只拦截 token 请求
+        reg.setOrder(Ordered.HIGHEST_PRECEDENCE); // 在 springSecurityFilterChain 之前执行
+        return reg;
+    }
+
+//    /**
+//     * 客户端信息
+//     * 对应表 oauth2_registered_client
+//     *
+//     * @param jdbcTemplate
+//     * @return
+//     */
+//    @Bean
+//    public RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
+//        return new JdbcRegisteredClientRepository(jdbcTemplate);
+//    }
+
+    @Bean
+    public RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
+        JdbcRegisteredClientRepository jdbcRegisteredClientRepository = new JdbcRegisteredClientRepository(jdbcTemplate);
+
+        RegisteredClient registeredClient = jdbcRegisteredClientRepository.findByClientId("service-admin"); // password-client-id
+        TokenSettings tokenSettings = registeredClient.getTokenSettings();
+        if (tokenSettings.getSetting("x509CertificateBoundAccessTokens") == null) {
+            TokenSettings finalTokenSettings = tokenSettings;
+            tokenSettings = TokenSettings.builder()
+                    .settings(settings -> settings.putAll(finalTokenSettings.getSettings()))
+                    .x509CertificateBoundAccessTokens(Boolean.FALSE)
+                    .build();
+
+            registeredClient = RegisteredClient.from(registeredClient)
+                    .tokenSettings(tokenSettings)
+                    .build();
+
+            jdbcRegisteredClientRepository.save(registeredClient);
+        }
+
+
+        return jdbcRegisteredClientRepository;
+    }
+
+    /**
+     * 授权信息
+     * 对应表：oauth2_authorization
+     */
+    @Bean
+    public OAuth2AuthorizationService authorizationService(JdbcTemplate jdbcTemplate,
+                                                           RegisteredClientRepository registeredClientRepository) {
+        JdbcOAuth2AuthorizationService service = new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository);
+        JdbcOAuth2AuthorizationService.OAuth2AuthorizationRowMapper authorizationRowMapper
+                = new JdbcOAuth2AuthorizationService.OAuth2AuthorizationRowMapper(
+                registeredClientRepository
+        );
+        authorizationRowMapper.setLobHandler(new DefaultLobHandler());
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        ClassLoader classLoader = JdbcOAuth2AuthorizationService.class.getClassLoader();
+        List<Module> securityModules = SecurityJackson2Modules.getModules(classLoader);
+        objectMapper.registerModules(securityModules);
+        objectMapper.registerModule(new OAuth2AuthorizationServerJackson2Module());
+        objectMapper.addMixIn(CurrentSysUser.class, CurrentSysUserMixin.class);
+        authorizationRowMapper.setObjectMapper(objectMapper);
+
+        service.setAuthorizationRowMapper(authorizationRowMapper);
+
+        return service;
+    }
+
+    /**
+     * 授权确认
+     * 对应表：oauth2_authorization_consent
+     */
+    @Bean
+    public OAuth2AuthorizationConsentService authorizationConsentService(JdbcTemplate jdbcTemplate,
+                                                                         RegisteredClientRepository registeredClientRepository) {
+        return new JdbcOAuth2AuthorizationConsentService(jdbcTemplate, registeredClientRepository);
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * 配置认证服务器请求地址
+     */
+    @Bean
+    public AuthorizationServerSettings authorizationServerSettings() {
+        //什么都不配置，则使用默认地址
+        return AuthorizationServerSettings.builder().build();
+    }
+
+    /**
+     * 配置token生成器
+     *
+     * @return 令牌生成器
+     */
+    @Bean
+    OAuth2TokenGenerator<OAuth2Token> tokenGenerator() {
+        OAuth2AccessTokenGenerator accessTokenGenerator = new OAuth2AccessTokenGenerator();
+        accessTokenGenerator.setAccessTokenCustomizer(opaqueTokenCustomizer());
+        OAuth2RefreshTokenGenerator refreshTokenGenerator = new OAuth2RefreshTokenGenerator();
+
+        return new DelegatingOAuth2TokenGenerator(accessTokenGenerator, refreshTokenGenerator);
+    }
+
+    /**
+     * 自定义 令牌填充
+     *
+     * @return
+     */
+    @Bean
+    public OAuth2TokenCustomizer<OAuth2TokenClaimsContext> opaqueTokenCustomizer() {
+        return context -> {
+            if (context.getTokenType().equals(OAuth2TokenType.ACCESS_TOKEN)) {
+                Authentication principal = context.getPrincipal();
+                if (principal != null && principal.getPrincipal() != null) {
+                    // 【2026-10 修正】原代码在此无条件强转 CurrentSysUser：
+                    //   CurrentSysUser currentSysUser = (CurrentSysUser) principal.getPrincipal();
+                    // 但授权主体并不总是用户对象——client_credentials 模式下
+                    // principal.getPrincipal() 是 clientId 字符串，强转即抛
+                    //   ClassCastException: String cannot be cast to CurrentSysUser
+                    // 最终被包装成 server_error，导致该模式完全无法签发令牌。
+                    // 改为类型判断：非用户主体时直接跳过定制，密码/验证码模式的原有逻辑不变。
+                    if (!(principal.getPrincipal() instanceof CurrentSysUser currentSysUser)) {
+                        return;
+                    }
+
+                    // 写入到 access token 的 claims 中
+                    OAuth2TokenClaimsSet.Builder claims = context.getClaims();
+                    claims.claim("principal", currentSysUser);
+
+                    claims.claims(claimsMap -> {
+                        // 获取当前已有的 scope（如果没有就初始化一个空集合）
+                        Set<String> scopes = new HashSet<>(
+                                Optional.ofNullable((Collection<String>) claimsMap.get("scope")).orElse(Collections.emptySet())
+                        );
+
+                        // 将当前用户的权限添加到 scopes 中
+                        for (GrantedAuthority authority : currentSysUser.getAuthorities()) {
+                            scopes.add(authority.getAuthority());
+                        }
+
+                        // 放回 claims 中
+                        claimsMap.put("scope", scopes);
+                    });
+
+                    String sessionId = context.get(OnlineSessionConstants.SESSION_ID_ATTRIBUTE);
+                    if (sessionId == null && context.getAuthorization() != null) {
+                        sessionId = context.getAuthorization()
+                                .getAttribute(OnlineSessionConstants.SESSION_ID_ATTRIBUTE);
+                    }
+
+                    if (sessionId != null) {
+                        context.getClaims().claim(
+                                OnlineSessionConstants.SESSION_ID_CLAIM,
+                                sessionId
+                        );
+                    }
+                }
+            }
+        };
+    }
+
+//    @Bean
+//    public OAuth2TokenCustomizer<JwtEncodingContext> jwtCustomizer() {
+//        return context -> {
+//            JwsHeader.Builder headers = context.getJwsHeader();
+//            JwtClaimsSet.Builder claims = context.getClaims();
+//            UserDetails userDetails = userDetailsService.loadUserByUsername(context.getPrincipal().getName());
+//            if (context.getTokenType().equals(OAuth2TokenType.ACCESS_TOKEN)) {
+//                //
+//
+//                /**
+//                 * Customize headers/claims for access_token
+//                 * 客户端权限 + 加上用户的Spring Security权限，都合并到scope中【体现到JWT则是在PAYLOAD的scope中】
+//                 */
+////                claims.claims(claimsConsumer->{
+////                    claimsConsumer.merge("scope", userDetails.getAuthorities(), (scope, authorities) -> {
+////                        Set<String> scopeSet = (Set<String>) scope;
+////                        Collection<SimpleGrantedAuthority> simpleGrantedAuthorities = (Collection<SimpleGrantedAuthority>) authorities;
+////                        simpleGrantedAuthorities.forEach(simpleGrantedAuthority -> {
+////                            if (!scopeSet.contains(simpleGrantedAuthority.getAuthority())) {
+////                                scopeSet.add(simpleGrantedAuthority.getAuthority());
+////                            }
+////                        });
+////                        return scopeSet;
+////                    });
+////                });
+//
+//                List<String> auths = new ArrayList<>();
+//                Authentication principal = context.getPrincipal();
+//                System.out.println("类名：" + principal.getClass().getName());
+//                for (GrantedAuthority auth : context.getPrincipal().getAuthorities()) {
+//                    auths.add(auth.getAuthority());
+//                }
+//                claims.claim("authorities", auths);
+//                if (userDetails instanceof CurrentSysUser currentSysUser) {
+//                    claims.claim("menus", JsonUtil.toString(currentSysUser.getMenus()));
+//                    claims.claim("userId", String.valueOf(currentSysUser.getId()));
+//                }
+//            } else if (context.getTokenType().getValue().equals(OidcParameterNames.ID_TOKEN)) {
+//
+//                // Customize headers/claims for id_token
+//                claims.claim(IdTokenClaimNames.AUTH_TIME, Date.from(Instant.now()));
+//                SessionInformation sessionInformation = context.get(SessionInformation.class);
+//                claims.claim("sid", sessionInformation.getSessionId());
+//                claims.claim("username", userDetails.getUsername());
+//                claims.claim("name", "测试name");
+//                claims.claim("description", "测试description");
+//            }
+//        };
+//    }
+
+    /**
+     * 图形验证码配置
+     *
+     * @return
+     */
+    @Bean
+    public ConfigurableCaptchaService captchaService() {
+        ConfigurableCaptchaService captchaService = new ConfigurableCaptchaService();
+        Random random = new Random();
+        captchaService.setColorFactory((x) -> {
+            int[] c = new int[3];
+            int i = random.nextInt(c.length);
+            for (int fi = 0; fi < c.length; fi++) {
+                if (fi == i) {
+                    c[fi] = random.nextInt(71);
+                } else {
+                    c[fi] = random.nextInt(256);
+                }
+            }
+            return new Color(c[0], c[1], c[2]);
+        });
+        RandomWordFactory wf = new RandomWordFactory();
+        wf.setCharacters("23456789abcdefghigkmnpqrstuvwxyzABCDEFGHIGKLMNPQRSTUVWXYZ");
+        wf.setMaxLength(4);
+        wf.setMinLength(4);
+        captchaService.setWordFactory(wf);
+        captchaService.setBackgroundFactory(new MyCustomBackgroundFactory());
+        captchaService.setFilterFactory(new DoubleRippleFilterFactory());
+
+        return captchaService;
+    }
+
+    private UserAgentAnalyzer userAgentAnalyzer;
+
+    @Bean
+    public UserAgentAnalyzer userAgentAnalyzer() {
+        this.userAgentAnalyzer = UserAgentAnalyzer
+                .newBuilder()
+                .hideMatcherLoadStats()
+                .build();
+        return this.userAgentAnalyzer;
+    }
+
+    /**
+     * 项目启动时异步预热解析器，避免第一个用户登录时感到卡顿
+     */
+    @PostConstruct
+    public void preheat() {
+        // 提前解析一条默认 UA 触发语法树装载
+        new Thread(() -> {
+            if (userAgentAnalyzer != null) {
+                userAgentAnalyzer.parse("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            }
+        }).start();
+    }
+}

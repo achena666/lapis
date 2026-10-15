@@ -1,0 +1,453 @@
+package com.luoyx.lapis.admin.sys.service.impl;
+
+
+import com.luoyx.lapis.admin.amqp.producer.UserSnapshotProducer;
+import com.luoyx.lapis.admin.api.sys.dto.UserDTO;
+import com.luoyx.lapis.admin.api.sys.enums.AccountNonExpiredEnum;
+import com.luoyx.lapis.admin.api.sys.enums.AccountNonLockedEnum;
+import com.luoyx.lapis.admin.api.sys.enums.CredentialsNonExpiredEnum;
+import com.luoyx.lapis.admin.api.sys.enums.EnabledEnum;
+import com.luoyx.lapis.admin.api.sys.enums.PrivateKeyRedisKeyEnum;
+import com.luoyx.lapis.admin.api.sys.enums.YesNoEnum;
+import com.luoyx.lapis.admin.api.sys.query.LoginLookupQuery;
+import com.luoyx.lapis.admin.sys.converter.UserConverter;
+import com.luoyx.lapis.admin.sys.converter.UserProfileConverter;
+import com.luoyx.lapis.admin.sys.converter.UserSnapshotConverter;
+import com.luoyx.lapis.admin.sys.entity.User;
+import com.luoyx.lapis.admin.sys.entity.UserProfile;
+import com.luoyx.lapis.admin.sys.entity.UserSnapshot;
+import com.luoyx.lapis.admin.sys.event.UserSnapshotEvent;
+import com.luoyx.lapis.admin.sys.mapper.UserMapper;
+import com.luoyx.lapis.admin.sys.query.UserPageQuery;
+import com.luoyx.lapis.admin.sys.request.ModifyPasswordDTO;
+import com.luoyx.lapis.admin.sys.request.ResetPasswordDTO;
+import com.luoyx.lapis.admin.sys.request.UserCreateDTO;
+import com.luoyx.lapis.admin.sys.request.UserUpdateDTO;
+import com.luoyx.lapis.admin.sys.response.CreatedUserVO;
+import com.luoyx.lapis.admin.sys.response.UserAutoCompleteVO;
+import com.luoyx.lapis.admin.sys.response.UserEditFormVO;
+import com.luoyx.lapis.admin.sys.response.UserPageResultVO;
+import com.luoyx.lapis.admin.sys.service.AuthorityService;
+import com.luoyx.lapis.admin.sys.service.RoleService;
+import com.luoyx.lapis.admin.sys.service.UserProfileService;
+import com.luoyx.lapis.admin.sys.service.UserRoleService;
+import com.luoyx.lapis.admin.sys.service.UserService;
+import com.luoyx.lapis.admin.sys.service.UserSnapshotService;
+import com.luoyx.lapis.framework.utils.SignUtils;
+import com.luoyx.lapis.framework.utils.rsa.RSAUtil;
+import com.luoyx.lapis.mybatisplus.dto.PageResult;
+import com.luoyx.lapis.mybatisplus.service.impl.BaseServiceImpl;
+import com.luoyx.lapis.security.util.SecurityUtils;
+import com.luoyx.lapis.usersnapshot.enums.EventType;
+import com.luoyx.lapis.web.exception.ResourceNotFoundException;
+import com.luoyx.lapis.web.exception.ValidateException;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+
+
+/**
+ * @author 罗英雄
+ */
+@Service
+@RequiredArgsConstructor
+public class UserServiceImpl extends BaseServiceImpl<UserMapper, User> implements UserService {
+
+    private final RedisTemplate<String, String> redisTemplate;
+    private final PasswordEncoder bcryptPasswordEncoder;
+    private final UserConverter userConverter;
+    private final UserProfileConverter userProfileConverter;
+    private final UserSnapshotConverter userSnapshotConverter;
+    private final UserProfileService userProfileService;
+    private final UserSnapshotService userSnapshotService;
+    private final RoleService roleService;
+    private final UserRoleService userRoleService;
+    private final AuthorityService authorityService;
+    private final AsyncTaskExecutor taskExecutor;
+    private final UserSnapshotProducer userSnapshotProducer;
+    //    private final UserSnapshotConverter userSnapshotConverter;
+    private final ApplicationEventPublisher applicationEventPublisher;
+
+    @Value(value = "${login.lookup.secret}")
+    private String loginLookupSecret;
+
+    @Override
+    public PageResult<UserPageResultVO> findPage(UserPageQuery query) {
+        if (Objects.nonNull(query.getCurrentUserId())) {
+            throw new ValidateException("currentUserId 不能从前端传递");
+        }
+        query.setCurrentUserId(SecurityUtils.getCurrentSysUserId());
+        return super.findPage(query);
+    }
+
+    /**
+     * 登录查询
+     *
+     * @param query 登录查询条件
+     * @return 用户信息
+     */
+    @Override
+    public UserDTO loginLookup(LoginLookupQuery query) {
+
+        final String username = query.getUsername();
+        final Long timestamp = query.getTimestamp();
+        final String sign = query.getSign();
+
+        // 防重放攻击（5分钟有效）
+        long now = System.currentTimeMillis();
+        if (Math.abs(now - timestamp) > 5 * 60 * 1000) {
+            throw new AccessDeniedException("请求过期");
+        }
+
+        // 验证签名
+        String baseString = username + timestamp;
+        String expectedSign = SignUtils.hmacSHA256(loginLookupSecret, baseString);
+        if (!expectedSign.equalsIgnoreCase(sign)) {
+            throw new AccessDeniedException("签名不合法");
+        }
+
+        UserDTO userDTO = baseMapper.findByUserName(username);
+        UserDTO.UserBaseInfo userBaseInfo;
+        if (null != userDTO && null != (userBaseInfo = userDTO.getUserBaseInfo())) {
+            final Long userId = userBaseInfo.getId();
+
+            CompletableFuture<Void> authoritiesFuture = CompletableFuture.runAsync(() -> {
+                userDTO.setAuthorities(authorityService.findAuthoritiesByUserId(userId));
+            }, taskExecutor);
+
+            CompletableFuture<Void> menuFuture = CompletableFuture.runAsync(() -> {
+                userDTO.setSideMenuList(authorityService.buildMenuTree(userId));
+            }, taskExecutor);
+
+            // 等待两个任务都完成
+            CompletableFuture.allOf(authoritiesFuture, menuFuture).join();
+        }
+
+        return userDTO;
+    }
+
+
+    @Override
+    public void modifyPassword(ModifyPasswordDTO modifyPasswordDTO) throws Exception {
+        final String redisKey = PrivateKeyRedisKeyEnum.MODIFY_PASSWORD.getKeyPrefix() + modifyPasswordDTO.getKey();
+
+        // 从redis获取RSA私钥
+        final String rsaPrivateKey = redisTemplate.opsForValue().get(redisKey);
+        if (StringUtils.isBlank(rsaPrivateKey)) {
+            log.error("缺失RSA私钥");
+            throw new ValidateException("缺失key");
+        }
+
+        try {
+            // RSA 私钥解密
+            final String newPassword = RSAUtil.decryptByPrivateKey(modifyPasswordDTO.getNewPassword(), rsaPrivateKey);
+            final String confirmPassword = RSAUtil.decryptByPrivateKey(modifyPasswordDTO.getConfirmPassword(), rsaPrivateKey);
+            if (!newPassword.equals(confirmPassword)) {
+                throw new ValidateException("两次输入的密码不一致");
+            }
+
+            User user = baseMapper.selectById(SecurityUtils.getCurrentSysUserId());
+            if (null == user) {
+                throw new ResourceNotFoundException("用户不存在");
+            }
+
+            String oldPassword = RSAUtil.decryptByPrivateKey(modifyPasswordDTO.getOldPassword(), rsaPrivateKey);
+            if (!bcryptPasswordEncoder.matches(oldPassword, user.getPassword())) {
+                throw new ValidateException("旧密码不正确");
+            }
+            user.setPassword(bcryptPasswordEncoder.encode(newPassword));
+            baseMapper.updateById(user);
+        } catch (Exception e) {
+            throw e;
+        } finally {
+
+            // 删除redis中的RSA私钥
+            redisTemplate.delete(redisKey);
+        }
+    }
+
+    /**
+     * 按关键词 查询自动完成数据
+     *
+     * @param keyword 关键词
+     * @return
+     */
+    @Override
+    public List<UserAutoCompleteVO> findSuggestions(String keyword) {
+        return baseMapper.findSuggestions(keyword);
+    }
+
+    /**
+     * 新增用户
+     * <p>
+     * 控制在一个事务中，避免数据不一致
+     *
+     * @param userCreateDTO 表单参数
+     * @return 新增的用户
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CreatedUserVO create(UserCreateDTO userCreateDTO) {
+        checkFormData(userCreateDTO);
+
+        User user = userConverter.toUser(userCreateDTO);
+        user.setPassword(bcryptPasswordEncoder.encode(userCreateDTO.getPassword()));
+        user.setAccountNonExpired(AccountNonExpiredEnum.NORMAL);
+        user.setAccountNonLocked(AccountNonLockedEnum.NORMAL);
+        user.setCredentialsNonExpired(CredentialsNonExpiredEnum.NORMAL);
+        user.setEnabled(EnabledEnum.ENABLED);
+        baseMapper.insert(user);
+        final Long userId = user.getId();
+
+        Set<Long> roleIdSet = new HashSet<>(userCreateDTO.getRoleIds());
+        if (userCreateDTO.getRoleIds().size() > roleIdSet.size()) {
+            throw new ValidateException("选择的角色不能重复");
+        }
+
+        // 新增用户角色 关联关系
+        userRoleService.saveUserRole(userId, roleIdSet);
+
+        UserProfile userProfile = userProfileConverter.toUserProfile(userCreateDTO.getProfile());
+        userProfile.setId(userId);
+        userProfileService.save(userProfile);
+
+        // 新增用户快照
+        UserSnapshot userSnapshot = userSnapshotConverter.toUserSnapshot(userProfile);
+        userSnapshotService.save(userSnapshot);
+
+        applicationEventPublisher.publishEvent(new UserSnapshotEvent(Collections.singletonList(userSnapshot), EventType.CREATE));
+
+        return userConverter.toCreatedUserVO(user, userProfile);
+    }
+
+    /**
+     * 校验表单数据
+     *
+     * @param userCreateDTO 表单参数
+     */
+    private void checkFormData(UserCreateDTO userCreateDTO) {
+
+        // 校验用户名是否存在
+        final String username = userCreateDTO.getUsername();
+        boolean isAvailable = isUsernameAvailable(null, username);
+        if (!isAvailable) {
+            throw new ValidateException("用户名 " + username + " 已存在");
+        }
+
+        // 校验手机号是否存在
+        final String phone = userCreateDTO.getProfile().getPhone();
+        isAvailable = userProfileService.isPhoneAvailable(null, phone);
+        if (!isAvailable) {
+            throw new ValidateException("手机号 " + phone + " 已存在");
+        }
+
+        // 校验邮箱是否存在
+        final String email = userCreateDTO.getProfile().getEmail();
+        isAvailable = userProfileService.isEmailAvailable(null, email);
+        if (!isAvailable) {
+            throw new ValidateException("邮箱 " + email + " 已存在");
+        }
+
+        // 校验角色是否存在
+        roleService.checkRolesExist(new HashSet<>(userCreateDTO.getRoleIds()));
+    }
+
+    /**
+     * 用户名唯一性校验
+     *
+     * @param excludeUserId 要排除的用户Id（编辑用户的场景）
+     * @param username      用户名
+     * @return 用户名已存在则返回false，否则返回true
+     */
+    @Override
+    public boolean isUsernameAvailable(Long excludeUserId, String username) {
+        return baseMapper.findByUsernameExcludingId(excludeUserId, username) == null;
+    }
+
+    /**
+     * 批量删除用户
+     *
+     * @param userIds 用户id集合
+     */
+    @Override
+    @Transactional
+    public void deleteByIds(List<Long> userIds) {
+        final Long currentSysUserId = SecurityUtils.getCurrentSysUserId();
+        if (userIds.contains(currentSysUserId)) {
+            throw new ValidateException("你不能删除自己");
+        }
+        List<User> users = baseMapper.selectByIds(userIds);
+        if (users.size() != userIds.size()) {
+            throw new ValidateException("部分用户不存在，可能已被其他人删除，请刷新后重试");
+        }
+        for (User user : users) {
+            if (YesNoEnum.YES.equals(user.getBuiltin())) {
+                throw new ValidateException("【" + user.getUsername() + "】是系统内置用户，不允许删除");
+            }
+        }
+
+        // 删除之前，更新用户快照
+        List<UserSnapshot> userSnapshotList = userProfileService.listByIds(userIds).stream()
+                .map(item -> {
+                    UserSnapshot userSnapshot = new UserSnapshot();
+                    userSnapshot.setId(item.getId());
+                    userSnapshot.setRealName(item.getRealName() + "（已删除）");
+                    userSnapshot.setNickname(item.getNickname() + "（已删除）");
+                    userSnapshot.setAvatar(item.getAvatar());
+                    userSnapshot.setLastUpdatedTime(item.getLastUpdatedTime());
+
+                    return userSnapshot;
+                })
+                .toList();
+        userSnapshotService.updateBatchById(userSnapshotList);
+
+        // 删除用户
+        baseMapper.deleteByIds(userIds);
+        userProfileService.removeByIds(userIds);
+        userRoleService.deleteUserRoleByUserIds(userIds);
+
+        // 发送已删除用户的快照消息
+        applicationEventPublisher.publishEvent(new UserSnapshotEvent(userSnapshotList, EventType.DELETE));
+    }
+
+    /**
+     * 用户 表单回显
+     *
+     * @param id 用户id
+     * @return 用户详情
+     */
+    @Override
+    public UserEditFormVO findUserForEdit(Long id) {
+//        User user = baseMapper.selectById(id);
+//        UserProfile userProfile = userProfileService.getById(id);
+//
+//        return userConverter.toUserDetailsVO(user, userProfile);
+        return baseMapper.selectForUserEditForm(id);
+    }
+
+    /**
+     * 修改用户信息
+     *
+     * @param userUpdateDTO 用户信息
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void update(UserUpdateDTO userUpdateDTO) {
+        checkFormData(userUpdateDTO);
+        final Long userId = userUpdateDTO.getId();
+        User existUser = baseMapper.selectById(userId);
+        if (Objects.isNull(existUser)) {
+            throw new ValidateException("用户不存在");
+        }
+        if (YesNoEnum.YES.equals(existUser.getBuiltin())) {
+            throw new ValidateException("系统内置用户不允许修改");
+        }
+        User user = userConverter.toUser(userUpdateDTO);
+        UserProfile userProfile = userProfileConverter.toUserProfile(userUpdateDTO.getProfile());
+        userProfile.setId(userId);
+
+        baseMapper.updateById(user);
+        userProfileService.updateById(userProfile);
+
+        // 更新用户角色 关联关系
+        final List<Long> inputRoleIds = userUpdateDTO.getRoleIds();
+        Set<Long> roleIdSet = new HashSet<>(inputRoleIds);
+        if (inputRoleIds.size() > roleIdSet.size()) {
+            throw new ValidateException("选择的角色不能重复");
+        }
+        userRoleService.updateUserRoleByUserId(userId, roleIdSet);
+
+        // 更新用户快照
+        UserSnapshot userSnapshot = userSnapshotConverter.toUserSnapshot(userProfile);
+        userSnapshotService.updateById(userSnapshot);
+
+        // 发送已更新用户的快照消息
+        applicationEventPublisher.publishEvent(new UserSnapshotEvent(Collections.singletonList(userSnapshot), EventType.UPDATE));
+    }
+
+    private void checkFormData(UserUpdateDTO userUpdateDTO) {
+
+        // 校验用户名是否存在
+        final Long excludeUserId = userUpdateDTO.getId();
+        final String username = userUpdateDTO.getUsername();
+        boolean isAvailable = isUsernameAvailable(excludeUserId, username);
+        if (!isAvailable) {
+            throw new ValidateException("用户名 " + username + " 已存在");
+        }
+
+        // 校验手机号是否存在
+        final String phone = userUpdateDTO.getProfile().getPhone();
+        isAvailable = userProfileService.isPhoneAvailable(excludeUserId, phone);
+        if (!isAvailable) {
+            throw new ValidateException("手机号 " + phone + " 已存在");
+        }
+
+        // 校验邮箱是否存在
+        final String email = userUpdateDTO.getProfile().getEmail();
+        isAvailable = userProfileService.isEmailAvailable(excludeUserId, email);
+        if (!isAvailable) {
+            throw new ValidateException("邮箱 " + email + " 已存在");
+        }
+
+        // 校验角色是否存在
+        roleService.checkRolesExist(new HashSet<>(userUpdateDTO.getRoleIds()));
+    }
+
+    /**
+     * 重置密码
+     *
+     * @param resetPasswordDTO 重置密码DTO
+     */
+    @Override
+    public void resetPassword(ResetPasswordDTO resetPasswordDTO) {
+        // 从redis中获取RSA私钥
+        final String redisKey = PrivateKeyRedisKeyEnum.RESET_PASSWORD.getKeyPrefix() + resetPasswordDTO.getKey();
+        String rsaPrivateKey = redisTemplate.opsForValue().get(redisKey);
+        if (StringUtils.isBlank(rsaPrivateKey)) {
+            throw new ValidateException("私钥不存在");
+        }
+        String decryptPassword;
+        try {
+            decryptPassword = RSAUtil.decryptByPrivateKey(resetPasswordDTO.getEncryptPassword(), rsaPrivateKey);
+        } catch (Exception e) {
+            throw new ValidateException("解密失败");
+        }
+        final Long userId = resetPasswordDTO.getUserId();
+        User targetUser = baseMapper.selectById(userId);
+        if (Objects.isNull(targetUser)) {
+            throw new ResourceNotFoundException("用户不存在");
+        }
+        if (YesNoEnum.YES.equals(targetUser.getBuiltin())) {
+            throw new ValidateException("系统内置用户不允许重置密码");
+        }
+        String bcryptPassword = bcryptPasswordEncoder.encode(decryptPassword);
+        baseMapper.resetPassword(userId, bcryptPassword);
+    }
+
+    /**
+     * 更新用户最近登录时间
+     *
+     * @param userId        用户id
+     * @param lastLoginTime 最近登录时间
+     * @return 更新的行数
+     */
+    @Override
+    public int updateLastLoginTime(Long userId, LocalDateTime lastLoginTime) {
+        return baseMapper.updateLastLoginTime(userId, lastLoginTime);
+    }
+}

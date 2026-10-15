@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>com.luoyx.lapis</groupId>
+        <artifactId>lapis-service-module</artifactId>
+        <version>0.2.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>lapis-service-dependency</artifactId>
+    <name>lapis-service-dependency【各个业务微服务的基础组件依赖】</name>
+    <description>
+        Eureka客户端
+        Ribbon负载均衡
+        Actuator程序监控器
+        Resilience4j熔断器
+        Config配置中心客户端
+        Bean转换工具MapStruct
+    </description>
+
+
+    <!-- Spring Cloud服务组件基础依赖 -->
+    <dependencies>
+
+        <!--eureka客户端-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+
+        <!-- Resilience4j -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-feign</artifactId>
+        </dependency>
+
+        <!-- config客户端 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+
+        <!-- 链路追踪依赖（Micrometer Tracing）
+             【2026-10 修正】原 spring-cloud-starter-zipkin 基于已停止维护的 Spring Cloud Sleuth，
+             在 Spring Boot 3+ / Spring Cloud 2022+ 上不再适用。
+             现改为 Micrometer Tracing + Brave 桥接 + Zipkin 上报，
+             版本由 Spring Boot 4 的 BOM 统一管理，无需显式指定 version。 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-brave</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.zipkin.reporter2</groupId>
+            <artifactId>zipkin-reporter-brave</artifactId>
+        </dependency>
+
+        <!-- actuator程序监控器 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Bean转换工具MapStruct start -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct-processor</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+        </dependency>
+        <!-- Bean转换工具MapStruct end -->
+
+
+    </dependencies>
+</project>

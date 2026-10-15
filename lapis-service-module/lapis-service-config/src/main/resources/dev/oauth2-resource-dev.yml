@@ -1,0 +1,12 @@
+# OAuth2 资源服务器配置
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+
+        # 访问令牌自省配置（对access_token进行校验）
+        opaquetoken:
+          client-id: service-admin
+          client-secret: ${OAUTH2_CLIENT_SECRET:123456}
+          introspection-uri: http://localhost:8762/oauth2/introspect

@@ -1,0 +1,46 @@
+package com.luoyx.lapis.web.enumsupport.validate;
+
+
+import com.luoyx.lapis.api.enumsupport.EnumSpec;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public final class EnumSpecValidator {
+
+    private EnumSpecValidator() {
+    }
+
+    public static void validate(Class<? extends Enum> enumClass) {
+
+        if (!EnumSpec.class.isAssignableFrom(enumClass)) {
+            return;
+        }
+
+        Enum<?>[] constants = enumClass.getEnumConstants();
+        if (constants == null || constants.length == 0) {
+            return;
+        }
+
+        Map<Object, Enum<?>> valueMap = new HashMap<>();
+
+        for (Enum<?> e : constants) {
+            EnumSpec<?, ?> enumSpec = (EnumSpec<?, ?>) e;
+            Object value = enumSpec.getValue();
+
+            Enum<?> existed = valueMap.putIfAbsent(value, e);
+            if (existed != null) {
+                throw new IllegalStateException(
+                        String.format(
+                                "枚举 %s 中存在重复的 value 定义：[%s]，冲突常量：%s / %s",
+                                enumClass.getName(),
+                                value,
+                                existed.name(),
+                                e.name()
+                        )
+                );
+            }
+        }
+    }
+}
+

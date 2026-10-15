@@ -1,0 +1,173 @@
+<form nz-form class="authority-list-search-form">
+    <div class="search-form-wrapper">
+        <!-- 左侧：全局/新建操作 -->
+        <div class="left-action-group">
+            <button nz-button nzType="primary" (click)="showFormDialog()" nzSize="small">
+                <span nz-icon nzType="plus" nzTheme="outline"></span>
+                创建权限资源
+            </button>
+        </div>
+
+        <!-- 右侧：查询与筛选条件 -->
+        <div class="right-filter-group">
+            <fieldset class="filter-fieldset">
+                <div class="right-filter-group">
+                    <div class="filter-item">
+                        <span class="filter-label">权限名称：</span>
+                        <input nz-input [(ngModel)]="authorityName" [ngModelOptions]="{standalone: true}" nzSize="small" class="filter-input" />
+                    </div>
+
+                    <div class="filter-item">
+                        <span class="filter-label">权限类型：</span>
+                        <nz-radio-group [(ngModel)]="authorityType" [ngModelOptions]="{standalone: true}" nzSize="small" nzButtonStyle="solid" (ngModelChange)="search()">
+                            @for (item of authorityTypeOptions; track item.value) {
+                                <label nz-radio-button [nzValue]="item.value">{{ item.label }}</label>
+                            }
+                        </nz-radio-group>
+                    </div>
+
+                    <div class="button-group">
+                        <button nz-button nzType="primary" nzSize="small" (click)="search()">
+                            <span nz-icon nzType="search" nzTheme="outline"></span>查询
+                        </button>
+                        <button nz-button nzSize="small" (click)="reset()">
+                            <span nz-icon nzType="reload" nzTheme="outline"></span>重置
+                        </button>
+                    </div>
+                </div>
+            </fieldset>
+
+
+
+            <div class="button-group">
+                <button nz-button nzSize="small" (click)="toggleExpandAll()">
+                    <span nz-icon [nzType]="isAllExpanded ? 'folder-open' : 'folder'" nzTheme="fill" class="authority-folder"></span>
+                    {{ isAllExpanded ? '收起全部' : '展开全部' }}
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div #tableContainer class="table-container">
+    <nz-table #expandTable [nzData]="treeNodeListOfAuthority" nzOuterBordered nzTableLayout="fixed"
+              (nzQueryParams)="onQueryParamsChange($event)"
+              [nzScroll]="{ x: '1560px', y: tableScrollY }"
+              nzShowSizeChanger
+              [nzFrontPagination]="false"
+              [nzLoading]="_loading"
+              nzSize="small"
+    >
+        <thead>
+        <tr>
+            <th id="authorityName" nzWidth="350px">权限名称</th>
+            <th id="authorityType" nzWidth="65px">类型</th>
+            <th id="authorityCode" nzWidth="250px">权限编码</th>
+            <th id="path" nzWidth="250px">请求路径</th>
+            <th id="level" nzWidth="55px">层级</th>
+            <th id="sort" nzWidth="70px" [nzSortFn]="true">排序</th>
+            <th id="children" nzWidth="80px">下级权限</th>
+            <th id="isBuiltIn" nzWidth="80px">是否内置</th>
+            <th id="createBy" nzWidth="90px">创建人</th>
+            <th id="createTime" nzWidth="150px">创建时间</th>
+            <th id="updateBy" nzWidth="90px">修改人</th>
+            <th id="updateTime" nzWidth="150px">修改时间</th>
+            <th id="operation" nzWidth="110px" nzRight>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+            @for (data of expandTable.data; track data.id) {
+                @for (item of mapOfExpandedData.get(data.id); track item.id) {
+                    @if ((item.parent && item.parent.expand) || !item.parent) {
+                        <tr>
+                            <td
+                                [nzIndentSize]="item.level! * 20"
+                                [nzShowExpand]="!!item.children"
+                                [(nzExpand)]="item.expand"
+                                (nzExpandChange)="collapse(mapOfExpandedData.get(data.id) || [], item, $event)"
+                            >
+                                <span nz-icon [nzType]="item.icon" nzTheme="outline" style="margin-right: 5px;"></span>
+                                {{ item.authorityName }}
+                            </td>
+                            <td>
+                                @if (item.authorityType?.value == 'menu') {
+                                    <nz-icon nzType="menu" nzTheme="outline" style="font-size: 17px;"
+                                             nz-tooltip nzTooltipTitle="菜单"
+                                    />
+                                }
+                                @else if (item.authorityType?.value == 'button'){
+                                    <nz-icon nzType="tool" nzTheme="twotone" style="font-size: 17px;"
+                                             nz-tooltip nzTooltipTitle="按钮"
+                                    />
+                                }
+                            </td>
+                            <td>{{ item.authorityCode }}</td>
+                            <td>{{ item.path }}</td>
+                            <td>{{ item.level }}</td>
+                            <td>{{ item.sort }}</td>
+                            <td>
+
+                                <!-- 展开/收起图标 -->
+                                <nz-icon
+                                    [nzType]="item.leaf ? 'file' : (item.expand ? 'folder-open' : 'folder')"
+                                    nzTheme="fill"
+                                    nz-tooltip
+                                    [nzTooltipTitle]="item.leaf ? '无下级' : (item.expand ? '点击收起' : '点击展开')"
+                                    (click)="toggleExpand(item, data.id)"
+                                    [style.cursor]="item.leaf ? 'default' : 'pointer'"
+                                    [class.authority-folder]="!item.leaf"
+                                    [class.authority-file]="item.leaf"
+                                />
+                            </td>
+                            <td>
+                                <span
+                                    nz-icon
+                                    [nzType]="item.builtin.value ? 'lock' : 'unlock'"
+                                    nzTheme="fill"
+                                    nz-tooltip
+                                    [nzTooltipTitle]="item.builtin.value ? '系统内置' : '自定义'"
+                                    [class.sys-status-builtin]="item.builtin.value"
+                                    [class.sys-status-custom]="!item.builtin.value"
+                                ></span>
+                            </td>
+                            <td>{{ item.createdBy }}</td>
+                            <td>{{ item.createdTime }}</td>
+                            <td>{{ item.lastUpdatedBy }}</td>
+                            <td>{{ item.lastUpdatedTime }}</td>
+                            <td nzRight>
+                                <button nz-button [nzType]="'primary'" nzSize="small" nzShape="circle"
+                                        nz-tooltip nzTooltipTitle="编辑"
+                                        (click)="showFormDialog(item.id)"
+                                >
+                                    <span nz-icon nzType="edit" nzTheme="outline"></span>
+                                </button>
+
+                                <button nz-button [nzType]="'primary'" nzSize="small" nzShape="circle" nzDanger
+                                        nz-tooltip [nzTooltipTitle]="item.leaf ? '删除' : '只能删除叶子节点'"
+                                        [disabled]="!item.leaf"
+
+                                        nz-popconfirm
+                                        [nzPopconfirmTitle]="'你确定要删除【' + item.authorityName + '】吗？'"
+                                        (click)="idToDelete = item.id"
+                                        [nzBeforeConfirm]="beforeConfirm"
+                                        nzPopconfirmPlacement="top"
+                                        [nzCancelButtonProps]="{nzDisabled: cancelButtonDisabled}"
+                                >
+                                    <span nz-icon nzType="delete" nzTheme="outline"></span>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            }
+        </tbody>
+    </nz-table>
+</div>
+
+<!-- 新增、编辑权限资源 弹窗  -->
+@if (formDialogDisplay) {
+    <app-authority-edit-form [(formDialogDisplay)]="formDialogDisplay" [authorityId]="authorityId"
+                             (triggerAuthorityListRefreshEmitter)="search()"
+    >
+    </app-authority-edit-form>
+}

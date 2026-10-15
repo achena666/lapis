@@ -1,0 +1,65 @@
+<div class="login_main">
+    <div class="login_box">
+        <div class="left">
+            <span class="logo_container">
+                <img data-v-dfb96b82="" src="../assets/img/lapis.png" alt="logo" class="logo">
+            </span>
+            <span class="title">LAPIS</span>
+            <span class="about">欢迎使用 lapis 权限管理系统</span>
+        </div>
+        <div class="right">
+            <nz-spin [nzSpinning]="isLoggingIn$ | async">
+                <form nz-form [formGroup]="loginForm" class="login-form" (ngSubmit)="login()">
+                    <div class="form-header">
+                        <span>系统登录</span>
+                    </div>
+
+                    <!-- 用户名 -->
+                    <nz-form-item>
+                        <nz-form-control nzErrorTip="请输入用户名!">
+                            <nz-input-wrapper>
+                                <nz-icon nzInputPrefix nzType="user" />
+                                <input type="text" nz-input formControlName="username" placeholder="用户名"/>
+                            </nz-input-wrapper>
+                        </nz-form-control>
+                    </nz-form-item>
+
+                    <!-- 密码 -->
+                    <nz-form-item>
+                        <nz-form-control nzErrorTip="请输入密码!">
+                            <nz-input-password>
+                                <nz-icon nzInputPrefix nzType="lock" />
+                                <input nz-input placeholder="密码" formControlName="password"/>
+                            </nz-input-password>
+                        </nz-form-control>
+                    </nz-form-item>
+
+                    <!-- 图形验证码 -->
+                    <nz-form-item>
+                        <nz-col [nzSpan]="12">
+                            <nz-form-control nzErrorTip="请输入验证码">
+                                <nz-input-wrapper>
+                                    <nz-icon nzInputPrefix nzType="lock" />
+                                    <input nz-input type="text" formControlName="captcha" placeholder="验证码" maxlength="4"/>
+                                </nz-input-wrapper>
+                            </nz-form-control>
+                        </nz-col>
+                        <nz-col [nzSpan]="12" style="text-align: center !important;">
+                            <nz-form-control>
+                                <img nz-image [nzSrc]="base64ImageCode" alt=""
+                                     (click)="refreshImgCode()"
+                                     [nzDisablePreview]="true"
+                                     title="点击切换验证码"
+                                     class="ant-form-item-control-input-content"
+                                     style="max-height:32px; border: 1px solid #b0b9c6"
+                                />
+                            </nz-form-control>
+                        </nz-col>
+                    </nz-form-item>
+                    <button nz-button class="login-form-button login-form-margin" nzType="primary">登&nbsp;&nbsp;录
+                    </button>
+                </form>
+            </nz-spin>
+        </div>
+    </div>
+</div>

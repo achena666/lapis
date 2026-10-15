@@ -1,0 +1,76 @@
+.dict-item-list-search-form {
+    padding: 24px;
+    background: #fbfbfb;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+}
+
+.search-result-list {
+    margin-top: 16px;
+    border: 1px dashed #e9e9e9;
+    border-radius: 6px;
+    background-color: #fafafa;
+    min-height: 200px;
+    text-align: center;
+}
+
+[nz-form-label] {
+    overflow: visible;
+}
+
+button {
+    margin-right: 8px;
+}
+
+.search-area {
+    text-align: right;
+}
+
+.ant-form-item {
+    flex: none;
+    flex-wrap: nowrap;
+    margin-right: 16px;
+    margin-bottom: 0;
+    text-align: right;
+    height: 32px;
+}
+
+::ng-deep .dict-item-list-search-form .ant-form-item-label > label {
+
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    height: 24px;
+    color: rgba(0, 0, 0, 0.85);
+    font-size: 14px;
+}
+
+.material-symbols-outlined {
+    /* 1. 改变 display 为 flex，消除基线（baseline）对齐带来的下下方间隙 */
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+
+    /* 2. 限制高度和行高，防止撑开 td */
+    height: 18px !important;
+    width: 18px !important;
+    line-height: 1 !important;
+
+    /* 3. 字体大小与 opsz 保持基本一致，避免 overflow */
+    font-size: 18px !important;
+
+    /* 4. 清除可能存在的默认 margin/padding */
+    margin: 0;
+    padding: 0;
+    vertical-align: middle;
+    cursor: grab;
+}
+
+.material-symbols-outlined:hover {
+    color: #595959;
+}
+
+.material-symbols-outlined:active {
+    cursor: grabbing;
+}
